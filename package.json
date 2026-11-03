@@ -1,5 +1,5 @@
 {
-  "name": "my-project",
+  "name": "lumina-raaos",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@12.3.4",
@@ -29,5 +29,7 @@
     "postcss": "^8.5",
     "tailwindcss": "^4.3.3",
     "typescript": "5.7.3"
-  }
+  },
+  "description": "LUMINA — AI-Powered Emotional Wellness Sanctuary by RaaOS",
+  "author": "Rudraraj Singh (RaaOS)"
 }
