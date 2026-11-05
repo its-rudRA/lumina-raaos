@@ -15,7 +15,9 @@ import {
   Leaf,
   LockKeyhole,
   MailOpen,
+  Maximize2,
   Mic,
+  Minimize2,
   Moon,
   Music2,
   Play,
@@ -28,6 +30,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { SanctuaryScene } from '@/components/sanctuary-scene'
 import { useHydrated } from './hydration-guard'
 import {
   addCheckIn,
@@ -93,6 +96,7 @@ export default function Page() {
   const [mode, setMode] = useState<Mode>('sanctuary')
   const [tab, setTab] = useState<'garden' | 'aura'>('aura')
   const [ritual, setRitual] = useState<'burn' | 'letter'>('burn')
+  const [immersive, setImmersive] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
   const [stuckOpen, setStuckOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -521,6 +525,16 @@ export default function Page() {
           You don&apos;t have to be happy to be worthy of peace.
         </p>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setImmersive(v => !v)}
+            className="support-button"
+            aria-pressed={immersive}
+          >
+            {immersive ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span className="hidden sm:inline">
+              {immersive ? 'Exit world view' : 'Sanctuary world view'}
+            </span>
+          </button>
           <button onClick={() => setSupportOpen(true)} className="support-button">
             <ShieldAlert size={14} />
             <span className="hidden sm:inline">Immediate support</span>
@@ -551,8 +565,12 @@ export default function Page() {
         <ModeToggle mode={mode} setMode={setMode} />
       </div>
 
-      <div className="relative z-10 mx-auto grid max-w-[1440px] gap-5 xl:grid-cols-[1fr_1.25fr_0.88fr]">
-        <section className="flex flex-col gap-5">
+      <div
+        className={`relative z-10 mx-auto grid max-w-[1440px] gap-5 ${
+          immersive ? 'xl:grid-cols-2' : 'xl:grid-cols-[1fr_1.25fr_0.88fr]'
+        }`}
+      >
+        <section className={`flex flex-col gap-5 ${immersive ? 'xl:order-2' : ''}`}>
           <div className={`${glass} p-6`}>
             <div className="mb-5 flex items-start justify-between">
               <div>
@@ -616,42 +634,71 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="flex flex-col gap-5">
-          <div className={`${glass} relative min-h-[445px] overflow-hidden p-6 sm:p-8`}>
-            <div className="mb-4 flex items-start justify-between">
+        <section
+          className={`flex flex-col gap-5 ${
+            immersive ? 'xl:order-1 xl:col-span-2' : ''
+          }`}
+        >
+          <div
+            className={`${glass} relative overflow-hidden p-6 transition-all duration-500 sm:p-8 ${
+              immersive ? 'min-h-[76vh]' : 'min-h-[445px]'
+            }`}
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="eyebrow">Your inner landscape</p>
+                <p className="eyebrow">Your inner landscape · 3D living sanctuary</p>
                 <h2 className="mt-2 font-serif text-3xl text-white">
-                  How are you <em>arriving?</em>
+                  {tab === 'aura' ? (
+                    <>
+                      How are you <em>arriving?</em>
+                    </>
+                  ) : (
+                    <>
+                      Your bioluminescent <em>garden.</em>
+                    </>
+                  )}
                 </h2>
               </div>
-              <div className="tab-pill">
+              <div className="flex items-center gap-2">
+                <div className="tab-pill">
+                  <button
+                    onClick={() => setTab('aura')}
+                    className={tab === 'aura' ? 'active' : ''}
+                  >
+                    Aura
+                  </button>
+                  <button
+                    onClick={() => setTab('garden')}
+                    className={tab === 'garden' ? 'active' : ''}
+                  >
+                    Garden
+                  </button>
+                </div>
                 <button
-                  onClick={() => setTab('aura')}
-                  className={tab === 'aura' ? 'active' : ''}
+                  onClick={() => setImmersive(v => !v)}
+                  aria-label={immersive ? 'Exit Sanctuary World View' : 'Sanctuary World View'}
+                  title={immersive ? 'Compact Sanctuary View' : 'Expand 3D Sanctuary World View'}
+                  className="icon-button"
                 >
-                  Aura
-                </button>
-                <button
-                  onClick={() => setTab('garden')}
-                  className={tab === 'garden' ? 'active' : ''}
-                >
-                  Garden
+                  {immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
               </div>
             </div>
-            {tab === 'aura' ? (
-              <AuraPad
-                orb={orb}
-                setOrb={handleOrbChange}
-                aura={aura}
-                tags={tags}
-                setTags={setTags}
-                plant={plant}
-              />
-            ) : (
-              <Garden blooms={gardenBlooms} />
-            )}
+
+            <SanctuaryStage
+              tab={tab}
+              setTab={setTab}
+              orb={orb}
+              setOrb={handleOrbChange}
+              aura={aura}
+              tags={tags}
+              setTags={setTags}
+              plant={plant}
+              blooms={gardenBlooms}
+              checkIns={checkIns}
+              rainPlaying={rainPlaying}
+              immersive={immersive}
+            />
           </div>
 
           <div className={`${glass} flex items-center justify-between gap-4 p-5`}>
@@ -665,7 +712,7 @@ export default function Page() {
               </div>
             </div>
             <button
-              onClick={() => setTab('garden')}
+              onClick={() => setTab(tab === 'garden' ? 'aura' : 'garden')}
               className="round-arrow"
               aria-label="Open garden"
             >
@@ -674,7 +721,7 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="flex flex-col gap-5">
+        <section className={`flex flex-col gap-5 ${immersive ? 'xl:order-3' : ''}`}>
           <div className={`${glass} p-6`}>
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -1096,28 +1143,33 @@ function DNA({
   )
 }
 
-function AuraPad({
+function SanctuaryStage({
+  tab,
+  setTab,
   orb,
   setOrb,
   aura,
   tags,
   setTags,
   plant,
+  blooms,
+  checkIns,
+  rainPlaying,
+  immersive,
 }: {
+  tab: 'aura' | 'garden'
+  setTab: (v: 'aura' | 'garden') => void
   orb: Orb
   setOrb: (v: Orb) => void
   aura: { label: string; color: string; note: string }
   tags: string[]
   setTags: (v: string[]) => void
   plant: () => void
+  blooms: number
+  checkIns: CheckInRecord[]
+  rainPlaying: boolean
+  immersive: boolean
 }) {
-  const move = (e: React.PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    setOrb({
-      x: Math.max(8, Math.min(92, ((e.clientX - r.left) / r.width) * 100)),
-      y: Math.max(12, Math.min(88, ((e.clientY - r.top) / r.height) * 100)),
-    })
-  }
   const choices = [
     'Tight chest',
     'Overthinking',
@@ -1125,82 +1177,65 @@ function AuraPad({
     'Quietly tired',
     'Need comfort',
   ]
+
   return (
     <div className="aura-wrap">
-      <div className="axis-label axis-left">low energy</div>
-      <div className="axis-label axis-right">high energy</div>
-      <div className="axis-label axis-top">pleasant</div>
-      <div className="axis-label axis-bottom">tender</div>
-      <div
-        className="aura-pad"
-        onPointerDown={move}
-        onPointerMove={e => e.buttons === 1 && move(e)}
-      >
-        <div className="crosshair x" />
-        <div className="crosshair y" />
-        <div
-          className="aura-orb"
-          style={{
-            left: `${orb.x}%`,
-            top: `${orb.y}%`,
-            background: aura.color,
-            boxShadow: `0 0 35px ${aura.color}, 0 0 80px ${aura.color}66`,
-          }}
-        />
-      </div>
-      <div className="mt-4 flex items-end justify-between">
-        <div>
-          <p className="font-serif text-2xl" style={{ color: aura.color }}>
-            {aura.label}
-          </p>
-          <p className="mt-1 text-xs text-white/45">{aura.note}</p>
-        </div>
-        <span className="text-xs text-white/30">drag the light</span>
-      </div>
-      <div className="tag-row">
-        {choices.map(tag => (
-          <button
-            key={tag}
-            onClick={() =>
-              setTags(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag])
-            }
-            className={tags.includes(tag) ? 'selected' : ''}
-          >
-            {tag}
-          </button>
-        ))}
-      </div>
-      <button onClick={plant} disabled={!tags.length} className="plant-button">
-        <Flower2 size={14} />
-        Plant this check-in into your Garden
-      </button>
-    </div>
-  )
-}
+      <SanctuaryScene
+        tab={tab}
+        orb={orb}
+        setOrb={setOrb}
+        aura={aura}
+        blooms={blooms}
+        checkIns={checkIns}
+        rainPlaying={rainPlaying}
+        immersive={immersive}
+      />
 
-function Garden({ blooms }: { blooms: number }) {
-  return (
-    <div className="garden">
-      <div className="stars">
-        ✦　·　✧　　·　✦
-        <br />
-        　·　✧　·　　✦
-      </div>
-      {Array.from({ length: Math.min(blooms, 8) }, (_, i) => (
-        <div
-          key={i}
-          className={`lotus lotus-${i % 3}`}
-          style={{ left: `${20 + ((i * 17) % 65)}%`, top: `${38 + ((i * 13) % 30)}%` }}
-        >
-          <Flower2 />
+      {tab === 'aura' ? (
+        <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-md">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="font-serif text-2xl" style={{ color: aura.color }}>
+                {aura.label}
+              </p>
+              <p className="mt-1 text-xs text-white/50">{aura.note}</p>
+            </div>
+            <span className="text-xs text-white/35">drag the 3D light core</span>
+          </div>
+          <div className="tag-row">
+            {choices.map(tag => (
+              <button
+                key={tag}
+                onClick={() =>
+                  setTags(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag])
+                }
+                className={tags.includes(tag) ? 'selected' : ''}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          <button onClick={plant} disabled={!tags.length} className="plant-button">
+            <Flower2 size={14} />
+            Plant this check-in into your 3D Garden
+          </button>
         </div>
-      ))}
-      <div className="garden-ground" />
-      <p className="garden-copy">
-        Your inner garden is not measured
-        <br />
-        in streaks. It grows when you return.
-      </p>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-md">
+          <div>
+            <p className="font-serif text-lg text-white/85">
+              Your inner garden is not measured in streaks. It grows when you return.
+            </p>
+            <p className="mt-1 text-xs text-white/45">
+              {Math.max(blooms, checkIns.length)} bioluminescent lotus blooms floating on your
+              sanctuary pond.
+            </p>
+          </div>
+          <button onClick={() => setTab('aura')} className="secondary-button py-2 px-3.5 text-xs">
+            Sculpt new check-in <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
