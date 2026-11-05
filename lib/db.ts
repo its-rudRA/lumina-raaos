@@ -134,3 +134,45 @@ export async function getSealedLetters(): Promise<SealedLetter[]> {
     return []
   }
 }
+
+export interface SanctuaryExport {
+  exportedAt: string
+  app: string
+  state: SanctuaryState | null
+  checkins: CheckInRecord[]
+  letters: SealedLetter[]
+}
+
+export async function exportSanctuaryData(): Promise<SanctuaryExport> {
+  const [state, checkins, letters] = await Promise.all([
+    loadSanctuaryState(),
+    getCheckIns(),
+    getSealedLetters(),
+  ])
+  return {
+    exportedAt: new Date().toISOString(),
+    app: 'LUMINA by RaaOS',
+    state,
+    checkins,
+    letters,
+  }
+}
+
+export async function clearSanctuaryData(): Promise<void> {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('lumina-profile')
+    }
+    const db = await openDB()
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(['state', 'checkins', 'letters'], 'readwrite')
+      tx.objectStore('state').clear()
+      tx.objectStore('checkins').clear()
+      tx.objectStore('letters').clear()
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+    })
+  } catch {
+    // Fallback silently if IndexedDB is blocked
+  }
+}

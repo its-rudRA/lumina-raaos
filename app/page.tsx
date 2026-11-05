@@ -32,6 +32,8 @@ import { useHydrated } from './hydration-guard'
 import {
   addCheckIn,
   type CheckInRecord,
+  clearSanctuaryData,
+  exportSanctuaryData,
   getCheckIns,
   getSealedLetters,
   loadSanctuaryState,
@@ -39,6 +41,29 @@ import {
   saveSealedLetter,
   type SealedLetter,
 } from '@/lib/db'
+
+const CRISIS_PHRASES = [
+  'end my life',
+  'kill myself',
+  'suicide',
+  'suicidal',
+  'want to die',
+  'wanna die',
+  'hurt myself',
+  'harm myself',
+  "can't go on living",
+  'cannot go on living',
+  'self harm',
+  'self-harm',
+  'better off dead',
+  'no reason to live',
+]
+
+export function containsCrisisSignal(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!normalized) return false
+  return CRISIS_PHRASES.some(phrase => normalized.includes(phrase))
+}
 
 type Mode = 'sanctuary' | 'gentle' | 'exhausted'
 type Orb = { x: number; y: number }
@@ -322,6 +347,12 @@ export default function Page() {
         onSupport={() => setSupportOpen(true)}
         supportOpen={supportOpen}
         onClose={() => setSupportOpen(false)}
+        onBreathPacer={() => {
+          setSupportOpen(false)
+          setMode('sanctuary')
+          setStep(4)
+          setStuckOpen(true)
+        }}
         rainPlaying={rainPlaying}
         onRain={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
       />
@@ -333,8 +364,33 @@ export default function Page() {
     setWelcomeOpen(false)
   }
 
+  async function handleEraseSanctuaryData() {
+    await clearSanctuaryData()
+    setName('Raa')
+    setPronouns('')
+    setGardenBlooms(3)
+    setOrb({ x: 50, y: 52 })
+    setCompanion('The Listener')
+    setTags([])
+    setCheckIns([])
+    setSealedLetters([])
+    setThought('')
+    setReply('')
+    setLetter('')
+    setWorry('')
+    setProfileOpen(false)
+  }
+
   function companionReply() {
     if (!thought.trim()) return
+    if (containsCrisisSignal(thought)) {
+      setReply(
+        `${firstName}, what you're carrying sounds deeply overwhelming, and your life matters. I am an AI sanctuary, not a crisis professional—please let a real human support you right now.`
+      )
+      setSupportOpen(true)
+      setThought('')
+      return
+    }
     const responses: Record<string, string> = {
       'The Listener': `I hear you, ${firstName}. That sounds like a lot to hold. You don't need to make it smaller here.`,
       'The Grounder': `Let's come back to now, ${firstName}. Feel your feet and name one thing that is steady.`,
@@ -688,6 +744,9 @@ export default function Page() {
                   <Mic size={15} />
                 </button>
               </div>
+              <p className="mt-3 text-[10px] leading-relaxed text-white/30">
+                LUMINA is a non-clinical reflection space, not medical or crisis care.
+              </p>
             </div>
           </div>
 
@@ -864,7 +923,16 @@ export default function Page() {
         </div>
       </section>
 
-      {supportOpen && <SupportModal onClose={() => setSupportOpen(false)} />}
+      {supportOpen && (
+        <SupportModal
+          onClose={() => setSupportOpen(false)}
+          onBreathPacer={() => {
+            setSupportOpen(false)
+            setStep(4)
+            setStuckOpen(true)
+          }}
+        />
+      )}
       {stuckOpen && (
         <StuckModal step={step} setStep={setStep} onClose={() => setStuckOpen(false)} />
       )}
@@ -875,6 +943,7 @@ export default function Page() {
           companion={companion}
           checkIns={checkIns}
           gardenBlooms={gardenBlooms}
+          onEraseAll={handleEraseSanctuaryData}
           onClose={() => setProfileOpen(false)}
         />
       )}
@@ -1136,10 +1205,16 @@ function Garden({ blooms }: { blooms: number }) {
   )
 }
 
-function SupportModal({ onClose }: { onClose: () => void }) {
+function SupportModal({
+  onClose,
+  onBreathPacer,
+}: {
+  onClose: () => void
+  onBreathPacer: () => void
+}) {
   return (
     <div className="modal-backdrop">
-      <div className="modal-card">
+      <div className="modal-card wide">
         <button onClick={onClose} className="modal-close" aria-label="Close">
           <X />
         </button>
@@ -1150,19 +1225,89 @@ function SupportModal({ onClose }: { onClose: () => void }) {
         <h2 className="mt-2 font-serif text-3xl text-white">Need immediate care?</h2>
         <p className="mt-3 text-sm leading-relaxed text-white/55">
           If you might hurt yourself or someone else, please contact local emergency services
-          now. You don&apos;t have to navigate this moment alone.
+          or a crisis counselor right now. You don&apos;t have to navigate this moment alone.
         </p>
-        <div className="mt-6 grid gap-3">
-          <a href="tel:988" className="primary-button justify-center">
-            Call or text 988 <ArrowRight size={15} />
-          </a>
+
+        <div className="mt-5 grid gap-2.5 text-xs">
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+            <p className="eyebrow text-[9px] text-[#edb4c5]">India · 24/7 Free &amp; Confidential</p>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-white/80">Tele-MANAS (National Helpline)</span>
+              <div className="flex flex-wrap gap-1.5">
+                <a href="tel:14416" className="secondary-button py-1.5 px-3 text-[11px]">
+                  Call 14416
+                </a>
+                <a href="tel:18008914416" className="secondary-button py-1.5 px-3 text-[11px]">
+                  1800-891-4416
+                </a>
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
+              <span className="text-white/70">Vandrevala Foundation</span>
+              <a href="tel:+919999666555" className="secondary-button py-1.5 px-3 text-[11px]">
+                +91 9999 666 555
+              </a>
+            </div>
+          </div>
+
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+              <p className="eyebrow text-[9px]">US &amp; Canada</p>
+              <p className="mt-1 text-white/80">Suicide &amp; Crisis Lifeline</p>
+              <a
+                href="tel:988"
+                className="primary-button mt-2.5 w-full justify-center py-2 text-xs"
+              >
+                Call or text 988 <ArrowRight size={13} />
+              </a>
+            </div>
+
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+              <p className="eyebrow text-[9px]">United Kingdom</p>
+              <p className="mt-1 text-white/80">NHS Mental Health &amp; Samaritans</p>
+              <div className="mt-2.5 flex gap-2">
+                <a
+                  href="tel:111"
+                  className="secondary-button flex-1 justify-center py-2 text-xs"
+                >
+                  NHS 111
+                </a>
+                <a
+                  href="tel:116123"
+                  className="secondary-button flex-1 justify-center py-2 text-xs"
+                >
+                  116 123
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+            <div>
+              <p className="eyebrow text-[9px]">International / Everywhere</p>
+              <p className="mt-1 text-white/75">
+                Verified free, confidential support in 130+ countries
+              </p>
+            </div>
+            <a
+              href="https://findahelpline.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="secondary-button py-2 px-3.5 text-xs"
+            >
+              findahelpline.com <ArrowRight size={13} />
+            </a>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
+          <button onClick={onBreathPacer} className="primary-button justify-center">
+            Open 60s breath pacer <Wind size={14} />
+          </button>
           <button onClick={onClose} className="secondary-button">
             Stay here and ground with me
           </button>
         </div>
-        <p className="mt-5 text-center text-[11px] text-white/30">
-          US &amp; Canada · For other regions, contact your local crisis line.
-        </p>
       </div>
     </div>
   )
@@ -1241,6 +1386,7 @@ function ProfileModal({
   companion,
   checkIns,
   gardenBlooms,
+  onEraseAll,
   onClose,
 }: {
   name: string
@@ -1248,8 +1394,12 @@ function ProfileModal({
   companion: string
   checkIns: CheckInRecord[]
   gardenBlooms: number
+  onEraseAll: () => Promise<void>
   onClose: () => void
 }) {
+  const [confirmErase, setConfirmErase] = useState(false)
+  const [exported, setExported] = useState(false)
+
   // Derive top recurring tags and dominant aura from IndexedDB check-ins
   const tagCounts: Record<string, number> = {}
   const auraCounts: Record<string, number> = {}
@@ -1278,6 +1428,23 @@ function ProfileModal({
     topTags.length > 0
       ? `${topTags.join(' · ')} · explaining yourself`
       : 'Urgency · too many tabs · explaining yourself'
+
+  async function handleExportBackup() {
+    const payload = await exportSanctuaryData()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'lumina-sanctuary-backup.json'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    setExported(true)
+    setTimeout(() => setExported(false), 2600)
+  }
 
   return (
     <div className="modal-backdrop">
@@ -1309,7 +1476,62 @@ function ProfileModal({
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="primary-button mt-7">
+
+        <div className="mt-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="eyebrow text-[9px] text-[#a4d1c8]">
+              Your Data Sovereignty (100% On-Device)
+            </p>
+            <LockKeyhole size={13} className="text-white/40" />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-white/50">
+            Zero cloud databases or telemetry. Your reflections live exclusively in this
+            browser&apos;s IndexedDB.
+          </p>
+          <div className="mt-3.5 flex flex-wrap gap-2.5">
+            <button
+              type="button"
+              onClick={handleExportBackup}
+              className="secondary-button py-2 px-3.5 text-xs"
+            >
+              {exported ? (
+                <>
+                  <Check size={13} /> Backup downloaded
+                </>
+              ) : (
+                'Export Sanctuary Backup (.json)'
+              )}
+            </button>
+            {!confirmErase ? (
+              <button
+                type="button"
+                onClick={() => setConfirmErase(true)}
+                className="secondary-button py-2 px-3.5 text-xs text-[#edb4c5]"
+              >
+                Erase All Local Data
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void onEraseAll()}
+                  className="primary-button py-2 px-3.5 text-xs"
+                >
+                  Confirm permanent erase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmErase(false)}
+                  className="secondary-button py-2 px-3 text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <button onClick={onClose} className="primary-button mt-6">
           Keep this close <Heart size={14} fill="currentColor" />
         </button>
       </div>
@@ -1457,6 +1679,7 @@ function LowStimulus({
   onSupport,
   supportOpen,
   onClose,
+  onBreathPacer,
   rainPlaying,
   onRain,
 }: {
@@ -1464,6 +1687,7 @@ function LowStimulus({
   onSupport: () => void
   supportOpen: boolean
   onClose: () => void
+  onBreathPacer: () => void
   rainPlaying: boolean
   onRain: () => void
 }) {
@@ -1499,7 +1723,7 @@ function LowStimulus({
           rain + slow breathing
         </p>
       </div>
-      {supportOpen && <SupportModal onClose={onClose} />}
+      {supportOpen && <SupportModal onClose={onClose} onBreathPacer={onBreathPacer} />}
     </main>
   )
 }
