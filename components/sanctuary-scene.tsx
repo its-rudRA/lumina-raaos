@@ -17,6 +17,7 @@ export interface SanctuarySceneProps {
   selectedBloom?: CheckInRecord | null
   onSelectBloom?: (bloom: CheckInRecord | null) => void
   releaseBurstCount?: number
+  illuminatePulse?: number
 }
 
 const MAX_LOTUSES = 24
@@ -227,6 +228,7 @@ export function SanctuaryScene({
   selectedBloom,
   onSelectBloom,
   releaseBurstCount = 0,
+  illuminatePulse = 0,
 }: SanctuarySceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredBloomIndex, setHoveredBloomIndex] = useState<number | null>(null)
@@ -245,6 +247,7 @@ export function SanctuaryScene({
     hoveredIndex: null as number | null,
     selectedIndex: null as number | null,
     emberTrigger: false,
+    illuminateTrigger: false,
     onSelectBloom,
   })
 
@@ -278,6 +281,14 @@ export function SanctuaryScene({
       prevBurstRef.current = releaseBurstCount
     }
   }, [releaseBurstCount])
+
+  const prevIlluminateRef = useRef(illuminatePulse)
+  useEffect(() => {
+    if (illuminatePulse > prevIlluminateRef.current) {
+      liveRef.current.illuminateTrigger = true
+      prevIlluminateRef.current = illuminatePulse
+    }
+  }, [illuminatePulse])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1021,6 +1032,23 @@ export function SanctuaryScene({
       ePos.needsUpdate = true
     }
 
+    // Lotus Memory Illumination Shockwave Ring across the water surface
+    const shockwaveGeo = trackGeo(new THREE.RingGeometry(0.45, 0.58, 64))
+    shockwaveGeo.rotateX(-Math.PI / 2)
+    const shockwaveMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xa4e5d6,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+    )
+    const shockwaveRing = new THREE.Mesh(shockwaveGeo, shockwaveMat)
+    shockwaveRing.position.set(0, -1.54, 0)
+    scene.add(shockwaveRing)
+    let illuminateLife = 0
+
     // Raycaster for hovering and clicking 3D Lotus Memories
     const raycaster = new THREE.Raycaster()
     const pointerNDC = new THREE.Vector2()
@@ -1279,6 +1307,33 @@ export function SanctuaryScene({
         ePos.needsUpdate = true
       } else {
         emberMat.opacity = 0
+      }
+
+      // Update Lotus Memory Illumination Shockwave & Moon Gate Brightening
+      if (state.illuminateTrigger) {
+        state.illuminateTrigger = false
+        illuminateLife = 1.0
+        const selIdx = state.selectedIndex
+        if (selIdx !== null && lotuses[selIdx]) {
+          shockwaveRing.position.set(lotuses[selIdx].baseX, -1.54, lotuses[selIdx].baseZ)
+        } else {
+          shockwaveRing.position.set(0, -1.54, -0.5)
+        }
+      }
+      if (illuminateLife > 0.005) {
+        illuminateLife = Math.max(0, illuminateLife - 0.012)
+        const waveProgress = 1.0 - illuminateLife
+        shockwaveRing.scale.setScalar(1.0 + waveProgress * 8.5)
+        shockwaveMat.opacity = illuminateLife * 0.65
+        moonArchMat.emissiveIntensity = 0.42 + illuminateLife * 0.85
+        portalDiscMat.opacity = 0.055 + illuminateLife * 0.16
+        moonGateLight.intensity = 2.2 + illuminateLife * 3.2
+        if (state.selectedIndex !== null && lotuses[state.selectedIndex]) {
+          lotuses[state.selectedIndex].petalMat.emissiveIntensity = 0.82 + illuminateLife * 0.65
+        }
+      } else {
+        shockwaveMat.opacity = 0
+        moonArchMat.emissiveIntensity = 0.42
       }
 
       // Smooth Camera Choreography:
