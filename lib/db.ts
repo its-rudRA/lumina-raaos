@@ -4,6 +4,7 @@ export interface CheckInRecord {
   orb: { x: number; y: number }
   auraLabel: string
   tags: string[]
+  note?: string
 }
 
 export interface SealedLetter {
@@ -14,6 +15,60 @@ export interface SealedLetter {
   content: string
 }
 
+export interface SemanticMemory {
+  id: string
+  text: string
+  createdAt: number
+  category: 'anchor' | 'trigger' | 'preference'
+}
+
+export interface BioRhythmState {
+  sleepHours: number
+  sleepQuality: 'rested' | 'fragmented' | 'exhausted'
+  rhythmNote: string
+  updatedAt: number
+}
+
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  mode: 'account' | 'guest'
+  createdAt: number
+}
+
+export interface WellnessProfilePreferences {
+  reasons: string[]
+  recentFeeling: string
+  helpGoals: string[]
+  comfortEnvironment: string
+  interactionStyle: string
+  dailyTime: string
+  optionalRhythmNote?: string
+  completedAt?: number
+}
+
+export interface OnboardingStatus {
+  introSeen: boolean
+  profileCompleted: boolean
+  tutorialCompleted: boolean
+  preferences?: WellnessProfilePreferences
+}
+
+export interface CompanionMessage {
+  id: string
+  role: 'user' | 'companion'
+  mode: string
+  text: string
+  timestamp: number
+}
+
+export interface StarJarNote {
+  id: string
+  text: string
+  createdAt: number
+}
+
 export interface SanctuaryState {
   key: string
   name: string
@@ -21,6 +76,23 @@ export interface SanctuaryState {
   gardenBlooms: number
   lastOrb: { x: number; y: number }
   preferredCompanion: string
+  memories?: SemanticMemory[]
+  bioRhythm?: BioRhythmState
+  authUser?: AuthUser | null
+  onboarding?: OnboardingStatus
+  companionHistory?: CompanionMessage[]
+  journeyCompletedDays?: number[]
+  sensoryMode?: 'full' | 'gentle' | 'low'
+  themeMode?: 'night' | 'dawn'
+  starJar?: StarJarNote[]
+}
+
+const DEFAULT_PROFILE: Omit<SanctuaryState, 'key'> = {
+  name: 'Raa',
+  pronouns: '',
+  gardenBlooms: 3,
+  lastOrb: { x: 50, y: 52 },
+  preferredCompanion: 'The Listener',
 }
 
 const DB_NAME = 'lumina_sanctuary_db'
@@ -63,18 +135,208 @@ export async function loadSanctuaryState(): Promise<SanctuaryState | null> {
   }
 }
 
-export async function saveSanctuaryState(state: Omit<SanctuaryState, 'key'>): Promise<void> {
+/**
+ * Atomically merges `patch` into the persisted 'profile' record (read-modify-write inside
+ * a single transaction), so multi-page fields (auth, onboarding, journey...) are never
+ * clobbered by legacy callers that only know the v1 fields.
+ */
+export async function patchSanctuaryState(
+  patch: Partial<Omit<SanctuaryState, 'key'>>
+): Promise<SanctuaryState | null> {
   try {
     const db = await openDB()
     return new Promise((resolve) => {
       const tx = db.transaction('state', 'readwrite')
-      tx.objectStore('state').put({ key: 'profile', ...state })
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => resolve()
+      const store = tx.objectStore('state')
+      let merged: SanctuaryState | null = null
+      const getReq = store.get('profile')
+      getReq.onsuccess = () => {
+        const existing = (getReq.result as SanctuaryState | undefined) ?? undefined
+        merged = { ...DEFAULT_PROFILE, ...(existing ?? {}), ...patch, key: 'profile' }
+        store.put(merged)
+      }
+      tx.oncomplete = () => resolve(merged)
+      tx.onerror = () => resolve(null)
+      tx.onabort = () => resolve(null)
     })
   } catch {
-    // Fallback silently if private browsing blocks IDB
+    return null
   }
+}
+
+export async function saveSanctuaryState(state: Omit<SanctuaryState, 'key'>): Promise<void> {
+  // Merge (never replace) so newer optional fields survive legacy full-state saves.
+  await patchSanctuaryState(state)
+}
+
+// ---------------------------------------------------------------------------
+// Local / demo authentication (100% on-device; nothing ever leaves the browser)
+// ---------------------------------------------------------------------------
+
+interface StoredAccount {
+  id: string
+  name: string
+  email: string
+  salt: string
+  hash: string
+  createdAt: number
+}
+
+interface AccountsRecord {
+  key: 'accounts'
+  accounts: StoredAccount[]
+}
+
+function randomId(prefix: string): string {
+  const rand =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return `${prefix}-${rand}`
+}
+
+async function hashCredential(password: string, salt: string): Promise<string> {
+  const data = `${salt}:${password}`
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data))
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+    }
+  } catch {
+    // fall through to encoded fallback
+  }
+  return `enc:${btoa(unescape(encodeURIComponent(data)))}`
+}
+
+async function readAccounts(): Promise<StoredAccount[]> {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      const req = db.transaction('state', 'readonly').objectStore('state').get('accounts')
+      req.onsuccess = () => resolve((req.result as AccountsRecord | undefined)?.accounts ?? [])
+      req.onerror = () => resolve([])
+    })
+  } catch {
+    return []
+  }
+}
+
+async function writeAccounts(accounts: StoredAccount[]): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('state', 'readwrite')
+    tx.objectStore('state').put({ key: 'accounts', accounts } satisfies AccountsRecord)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+const FRESH_ONBOARDING: OnboardingStatus = {
+  introSeen: false,
+  profileCompleted: false,
+  tutorialCompleted: false,
+}
+
+export async function registerLocalUser(
+  name: string,
+  email: string,
+  password: string
+): Promise<AuthUser> {
+  const cleanName = name.trim()
+  const cleanEmail = email.trim().toLowerCase()
+  if (!cleanName) throw new Error('Please share a name so LUMINA knows how to greet you.')
+  if (!cleanEmail || !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+    throw new Error('Please enter a valid email address.')
+  }
+  if (!password || password.length < 6) {
+    throw new Error('Please choose a password with at least 6 characters.')
+  }
+
+  const accounts = await readAccounts()
+  if (accounts.some((a) => a.email === cleanEmail)) {
+    throw new Error('A sanctuary already exists on this device for that email. Try signing in.')
+  }
+
+  const salt = randomId('salt')
+  const account: StoredAccount = {
+    id: randomId('user'),
+    name: cleanName,
+    email: cleanEmail,
+    salt,
+    hash: await hashCredential(password, salt),
+    createdAt: Date.now(),
+  }
+  try {
+    await writeAccounts([...accounts, account])
+  } catch {
+    throw new Error('Local storage is unavailable, so an account cannot be created on this device.')
+  }
+
+  const authUser: AuthUser = {
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    mode: 'account',
+    createdAt: account.createdAt,
+  }
+  await patchSanctuaryState({ authUser, name: cleanName, onboarding: { ...FRESH_ONBOARDING } })
+  return authUser
+}
+
+export async function signInLocalUser(email: string, password: string): Promise<AuthUser> {
+  const cleanEmail = email.trim().toLowerCase()
+  if (!cleanEmail || !password) throw new Error('Please enter your email and password.')
+
+  const accounts = await readAccounts()
+  const account = accounts.find((a) => a.email === cleanEmail)
+  const hash = account ? await hashCredential(password, account.salt) : null
+  if (!account || hash !== account.hash) {
+    throw new Error(
+      'We could not find a matching account on this device. Check your details, or continue as a guest.'
+    )
+  }
+
+  const authUser: AuthUser = {
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    mode: 'account',
+    createdAt: account.createdAt,
+  }
+  const existing = await loadSanctuaryState()
+  await patchSanctuaryState({
+    authUser,
+    name: account.name,
+    onboarding: existing?.onboarding ?? { ...FRESH_ONBOARDING },
+  })
+  return authUser
+}
+
+export async function continueAsGuestUser(): Promise<AuthUser> {
+  const existing = await loadSanctuaryState()
+  const authUser: AuthUser =
+    existing?.authUser?.mode === 'guest'
+      ? existing.authUser
+      : {
+          id: randomId('guest'),
+          name: 'Gentle Traveler',
+          email: '',
+          mode: 'guest',
+          createdAt: Date.now(),
+        }
+  await patchSanctuaryState({
+    authUser,
+    onboarding: existing?.onboarding ?? { ...FRESH_ONBOARDING },
+  })
+  return authUser
+}
+
+export async function signOutLocalUser(): Promise<void> {
+  // Keeps check-ins, blooms, letters and every other local record intact.
+  await patchSanctuaryState({ authUser: null })
 }
 
 export async function addCheckIn(record: Omit<CheckInRecord, 'id'>): Promise<CheckInRecord[]> {
