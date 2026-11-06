@@ -63,6 +63,10 @@ export default function IntroductionPage() {
     if (isHydrated && !authUser) router.replace('/welcome')
   }, [isHydrated, authUser, router])
 
+  useEffect(() => {
+    router.prefetch('/onboarding/profile')
+  }, [router])
+
   async function begin() {
     setBusy(true)
     await updateOnboarding({ introSeen: true })

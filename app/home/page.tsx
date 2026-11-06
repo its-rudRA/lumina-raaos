@@ -22,7 +22,6 @@ import {
   Music2,
   Play,
   RotateCcw,
-  ShieldAlert,
   Sparkles,
   Star,
   SunMedium,
@@ -32,75 +31,18 @@ import {
 } from 'lucide-react'
 import { formatRelativeTime, SanctuaryScene } from '@/components/sanctuary-scene'
 import { useHydrated } from '../hydration-guard'
+import { AppShell } from '@/components/app-shell'
+import { useSanctuary } from '@/context/sanctuary-context'
 import {
-  addCheckIn,
   type BioRhythmState,
   type CheckInRecord,
-  clearSanctuaryData,
   exportSanctuaryData,
-  getCheckIns,
-  getSealedLetters,
-  loadSanctuaryState,
-  saveSanctuaryState,
-  saveSealedLetter,
   type SealedLetter,
-  type SemanticMemory,
 } from '@/lib/db'
 
-const DEFAULT_MEMORIES: SemanticMemory[] = [
-  {
-    id: 'mem-1',
-    text: 'Step back and soften the pace when late-night study or work spirals build up.',
-    createdAt: 1730000000000,
-    category: 'anchor',
-  },
-  {
-    id: 'mem-2',
-    text: 'Prefers being met with quiet presence before problem-solving.',
-    createdAt: 1730000000000,
-    category: 'preference',
-  },
-]
-
-const DEFAULT_BIO_RHYTHM: BioRhythmState = {
-  sleepHours: 7,
-  sleepQuality: 'rested',
-  rhythmNote: 'Steady baseline rest',
-  updatedAt: 1730000000000,
-}
-
-const CRISIS_PHRASES = [
-  'end my life',
-  'kill myself',
-  'suicide',
-  'suicidal',
-  'want to die',
-  'wanna die',
-  'hurt myself',
-  'harm myself',
-  "can't go on living",
-  'cannot go on living',
-  'self harm',
-  'self-harm',
-  'better off dead',
-  'no reason to live',
-]
-
-function containsCrisisSignal(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
-  if (!normalized) return false
-  return CRISIS_PHRASES.some(phrase => normalized.includes(phrase))
-}
 
 type Mode = 'sanctuary' | 'gentle' | 'exhausted'
 type Orb = { x: number; y: number }
-
-interface AudioEngineRef {
-  ctx: AudioContext
-  nodes: OscillatorNode[]
-  noise?: AudioBufferSourceNode
-  gain: GainNode
-}
 
 interface SpeechRecognitionInstance {
   continuous: boolean
@@ -116,15 +58,54 @@ interface SpeechRecognitionInstance {
 const glass = 'rounded-[24px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-xl'
 
 export default function Page() {
+  return (
+    <AppShell>
+      <HomeContent />
+    </AppShell>
+  )
+}
+
+function HomeContent() {
   const hydrated = useHydrated()
-  const [mode, setMode] = useState<Mode>('sanctuary')
+  const {
+    name,
+    pronouns,
+    gardenBlooms,
+    orb,
+    aura,
+    companion,
+    checkIns,
+    sealedLetters,
+    memories,
+    bioRhythm,
+    sensoryMode,
+    rainPlaying,
+    toggleRain,
+    setOrb,
+    setCompanion,
+    plantCheckIn,
+    sealLetter,
+    addMemory,
+    removeMemory,
+    updateBioRhythm,
+    updateProfileSettings,
+    sendCompanionThought,
+    eraseAllData,
+  } = useSanctuary()
+
+  // The shell's sensory setting is the single source of truth for the page mode.
+  const mode: Mode =
+    sensoryMode === 'gentle' ? 'gentle' : sensoryMode === 'low' ? 'exhausted' : 'sanctuary'
+  const setMode = (m: Mode) =>
+    void updateProfileSettings({
+      sensoryMode: m === 'gentle' ? 'gentle' : m === 'exhausted' ? 'low' : 'full',
+    })
+
   const [tab, setTab] = useState<'garden' | 'aura'>('aura')
   const [ritual, setRitual] = useState<'burn' | 'letter'>('burn')
   const [immersive, setImmersive] = useState(false)
-  const [supportOpen, setSupportOpen] = useState(false)
   const [stuckOpen, setStuckOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [welcomeOpen, setWelcomeOpen] = useState(false)
   const [lettersOpen, setLettersOpen] = useState(false)
 
   const [step, setStep] = useState(1)
@@ -134,33 +115,23 @@ export default function Page() {
   const [letterSaved, setLetterSaved] = useState(false)
   const [unlock, setUnlock] = useState('Next heavy day')
 
-  const [orb, setOrb] = useState<Orb>({ x: 50, y: 52 })
-  const [companion, setCompanion] = useState('The Listener')
   const [thought, setThought] = useState('')
   const [reply, setReply] = useState('')
 
-  const [name, setName] = useState('Raa')
-  const [pronouns, setPronouns] = useState('')
   const [tags, setTags] = useState<string[]>([])
-  const [gardenBlooms, setGardenBlooms] = useState(3)
-  const [rainPlaying, setRainPlaying] = useState(false)
   const [breathActive, setBreathActive] = useState(false)
   const [listening, setListening] = useState(false)
 
-  const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
-  const [sealedLetters, setSealedLetters] = useState<SealedLetter[]>([])
   const [selectedBloom, setSelectedBloom] = useState<CheckInRecord | null>(null)
   const [releaseBurstCount, setReleaseBurstCount] = useState(0)
   const [illuminatePulse, setIlluminatePulse] = useState(0)
 
-  const [memories, setMemories] = useState<SemanticMemory[]>(DEFAULT_MEMORIES)
   const [memoryVaultOpen, setMemoryVaultOpen] = useState(false)
   const [newMemoryText, setNewMemoryText] = useState('')
   const [newMemoryCategory, setNewMemoryCategory] = useState<'anchor' | 'trigger' | 'preference'>(
     'anchor'
   )
 
-  const [bioRhythm, setBioRhythm] = useState<BioRhythmState>(DEFAULT_BIO_RHYTHM)
   const [inWorldReleaseOpen, setInWorldReleaseOpen] = useState(false)
   const [inWorldWorry, setInWorldWorry] = useState('')
   const [inWorldToast, setInWorldToast] = useState('')
@@ -168,16 +139,11 @@ export default function Page() {
   const [greeting, setGreeting] = useState('Welcome')
   const [date, setDate] = useState('')
 
-  const audioRef = useRef<AudioEngineRef | null>(null)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
 
-  // Clean up Web Audio & Speech Recognition on unmount
+  // Stop speech recognition on unmount (audio now lives in the shared provider).
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.ctx.close().catch(() => {})
-        audioRef.current = null
-      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop()
@@ -188,7 +154,7 @@ export default function Page() {
     }
   }, [])
 
-  // Deterministic time + IndexedDB hydration + legacy localStorage migration
+  // Deterministic greeting + date
   useEffect(() => {
     const now = new Date()
     const hour = now.getHours()
@@ -209,135 +175,18 @@ export default function Page() {
         year: 'numeric',
       }).format(now)
     )
-
-    let cancelled = false
-    async function hydrateFromDB() {
-      let legacyName: string | undefined
-      let legacyPronouns: string | undefined
-
-      try {
-        const saved = window.localStorage.getItem('lumina-profile')
-        if (saved) {
-          const parsed = JSON.parse(saved) as { name?: string; pronouns?: string }
-          legacyName = parsed.name
-          legacyPronouns = parsed.pronouns
-        }
-      } catch {
-        window.localStorage.removeItem('lumina-profile')
-      }
-
-      const [storedState, storedCheckIns, storedLetters] = await Promise.all([
-        loadSanctuaryState(),
-        getCheckIns(),
-        getSealedLetters(),
-      ])
-
-      if (cancelled) return
-
-      setCheckIns(storedCheckIns)
-      setSealedLetters(storedLetters)
-
-      if (storedState) {
-        const resolvedName = storedState.name || legacyName || 'Raa'
-        const resolvedPronouns = storedState.pronouns ?? legacyPronouns ?? ''
-        setName(resolvedName)
-        setPronouns(resolvedPronouns)
-        setGardenBlooms(typeof storedState.gardenBlooms === 'number' ? storedState.gardenBlooms : 3)
-        if (storedState.lastOrb) setOrb(storedState.lastOrb)
-        if (storedState.preferredCompanion) setCompanion(storedState.preferredCompanion)
-        if (storedState.memories) setMemories(storedState.memories)
-        if (storedState.bioRhythm) setBioRhythm(storedState.bioRhythm)
-
-        if (legacyName !== undefined || legacyPronouns !== undefined) {
-          window.localStorage.removeItem('lumina-profile')
-        }
-      } else if (legacyName !== undefined || legacyPronouns !== undefined) {
-        const migratedName = legacyName || 'Raa'
-        const migratedPronouns = legacyPronouns || ''
-        setName(migratedName)
-        setPronouns(migratedPronouns)
-        await saveSanctuaryState({
-          name: migratedName,
-          pronouns: migratedPronouns,
-          gardenBlooms: 3,
-          lastOrb: { x: 50, y: 52 },
-          preferredCompanion: 'The Listener',
-          memories: DEFAULT_MEMORIES,
-          bioRhythm: DEFAULT_BIO_RHYTHM,
-        })
-        window.localStorage.removeItem('lumina-profile')
-      }
-    }
-
-    hydrateFromDB()
-    return () => {
-      cancelled = true
-    }
   }, [])
-
-  const persistState = useCallback(
-    (overrides?: Partial<{
-      name: string
-      pronouns: string
-      gardenBlooms: number
-      lastOrb: Orb
-      preferredCompanion: string
-      memories: SemanticMemory[]
-      bioRhythm: BioRhythmState
-    }>) => {
-      void saveSanctuaryState({
-        name: overrides?.name ?? name,
-        pronouns: overrides?.pronouns ?? pronouns,
-        gardenBlooms: overrides?.gardenBlooms ?? gardenBlooms,
-        lastOrb: overrides?.lastOrb ?? orb,
-        preferredCompanion: overrides?.preferredCompanion ?? companion,
-        memories: overrides?.memories ?? memories,
-        bioRhythm: overrides?.bioRhythm ?? bioRhythm,
-      })
-    },
-    [name, pronouns, gardenBlooms, orb, companion, memories, bioRhythm]
-  )
-
-  const handleOrbChange = useCallback(
-    (nextOrb: Orb) => {
-      setOrb(nextOrb)
-      persistState({ lastOrb: nextOrb })
-    },
-    [persistState]
-  )
 
   const handleCompanionChange = useCallback(
     (nextCompanion: string) => {
       setCompanion(nextCompanion)
       setReply('')
-      persistState({ preferredCompanion: nextCompanion })
     },
-    [persistState]
+    [setCompanion]
   )
+
 
   const firstName = (hydrated ? name : 'Raa').trim().split(/\s+/)[0] || 'friend'
-
-  const aura = useMemo(
-    () =>
-      orb.x > 64 && orb.y < 42
-        ? {
-            label: 'Wired & Overthinking',
-            color: '#e7a9bd',
-            note: 'There is energy here. Let it soften.',
-          }
-        : orb.x < 40 && orb.y > 60
-          ? {
-              label: 'Quietly Heavy',
-              color: '#9584bf',
-              note: 'You can carry less for the next few minutes.',
-            }
-          : {
-              label: 'Softly Grounded',
-              color: '#8ec9bd',
-              note: 'A small steadiness is already here.',
-            },
-    [orb]
-  )
 
   // Dynamic Emotional Weather derived from recent check-ins + biological rest rhythm
   const weatherMetrics = useMemo(() => {
@@ -421,38 +270,16 @@ export default function Page() {
     return (
       <LowStimulus
         onBack={() => setMode('sanctuary')}
-        onSupport={() => setSupportOpen(true)}
-        supportOpen={supportOpen}
-        onClose={() => setSupportOpen(false)}
-        onBreathPacer={() => {
-          setSupportOpen(false)
-          setMode('sanctuary')
-          setStep(4)
-          setStuckOpen(true)
-        }}
         rainPlaying={rainPlaying}
-        onRain={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+        onRain={toggleRain}
       />
     )
   }
 
-  function saveProfile() {
-    persistState({ name, pronouns })
-    setWelcomeOpen(false)
-  }
 
   async function handleEraseSanctuaryData() {
-    await clearSanctuaryData()
-    setName('Raa')
-    setPronouns('')
-    setGardenBlooms(3)
-    setOrb({ x: 50, y: 52 })
-    setCompanion('The Listener')
+    await eraseAllData()
     setTags([])
-    setCheckIns([])
-    setSealedLetters([])
-    setMemories(DEFAULT_MEMORIES)
-    setBioRhythm(DEFAULT_BIO_RHYTHM)
     setThought('')
     setReply('')
     setLetter('')
@@ -463,69 +290,29 @@ export default function Page() {
   function handleAddMemory() {
     const trimmed = newMemoryText.trim()
     if (!trimmed) return
-    const nextMemories: SemanticMemory[] = [
-      {
-        id: `mem-${Date.now()}`,
-        text: trimmed,
-        createdAt: Date.now(),
-        category: newMemoryCategory,
-      },
-      ...memories,
-    ]
-    setMemories(nextMemories)
+    void addMemory(trimmed, newMemoryCategory)
     setNewMemoryText('')
-    persistState({ memories: nextMemories })
   }
 
   function handleDeleteMemory(id: string) {
-    const nextMemories = memories.filter(m => m.id !== id)
-    setMemories(nextMemories)
-    persistState({ memories: nextMemories })
+    void removeMemory(id)
   }
 
   function handleUpdateBioRhythm(patch: Partial<BioRhythmState>) {
-    const nextBio: BioRhythmState = {
-      ...bioRhythm,
-      ...patch,
-      updatedAt: Date.now(),
-    }
-    setBioRhythm(nextBio)
-    persistState({ bioRhythm: nextBio })
+    void updateBioRhythm({ ...bioRhythm, ...patch })
   }
 
-  function companionReply() {
+
+  async function companionReply() {
     const raw = thought.trim()
     if (!raw) return
-    if (containsCrisisSignal(raw)) {
-      setReply(
-        `${firstName}, what you're carrying sounds deeply overwhelming, and your life matters. I am an AI sanctuary, not a crisis professional—please let a real human support you right now.`
-      )
-      setSupportOpen(true)
-      setThought('')
-      return
-    }
-
-    const snippet = raw.length > 68 ? `${raw.slice(0, 68)}…` : raw
-    const activeTagsText = tags.length > 0 ? ` while holding ${tags.join(' and ').toLowerCase()}` : ''
-    const restContext =
-      bioRhythm.sleepQuality === 'exhausted'
-        ? `Because you're running on ${bioRhythm.sleepHours}h of exhausted rest, everything feels heavier right now.`
-        : bioRhythm.sleepQuality === 'fragmented'
-          ? `After ${bioRhythm.sleepHours}h of fragmented rest, your nervous system deserves extra gentleness.`
-          : `With your aura ${aura.label.toLowerCase()}, let's honor your pace.`
-    const anchorMemory = memories[0]?.text
-      ? ` Remembering your note: “${memories[0].text}”`
-      : ''
-
-    const responses: Record<string, string> = {
-      'The Listener': `I hear you, ${firstName}—especially around “${snippet}”${activeTagsText}. ${restContext} You don't need to shrink or solve this right now.${anchorMemory}`,
-      'The Grounder': `Thank you for naming “${snippet}”, ${firstName}. Since you're arriving ${aura.label.toLowerCase()}${activeTagsText}, let's unclench your jaw, drop your shoulders, and take one slow breath.${anchorMemory}`,
-      'The Guide': `Holding “${snippet}”${activeTagsText} takes real energy, ${firstName}. ${restContext} What is one smaller, kinder expectation you can set for the next hour?${anchorMemory}`,
-      'Boundary Coach': `For “${snippet}”, here is a gentle boundary you can use today, ${firstName}: “I care about doing this well, and right now I need to step back and rest so I can return with a clear head.”${anchorMemory}`,
-    }
-    setReply(responses[companion])
     setThought('')
+    // Crisis guardrail + history live in the shared provider; a detected crisis signal
+    // sets crisisAlert, which makes the app shell open the support modal automatically.
+    const text = await sendCompanionThought(raw, companion, { tags })
+    setReply(text)
   }
+
 
   function toggleVoiceVent() {
     if (listening && recognitionRef.current) {
@@ -579,20 +366,12 @@ export default function Page() {
   }
 
   async function plant() {
-    const nextBlooms = gardenBlooms + 1
-    setGardenBlooms(nextBlooms)
     const plantedTags = [...tags]
     setTags([])
     setTab('garden')
-    persistState({ gardenBlooms: nextBlooms, lastOrb: orb })
-    const updated = await addCheckIn({
-      timestamp: Date.now(),
-      orb,
-      auraLabel: aura.label,
-      tags: plantedTags,
-    })
-    if (updated.length) setCheckIns(updated)
+    await plantCheckIn(plantedTags)
   }
+
 
   function release() {
     setWorry('')
@@ -606,75 +385,17 @@ export default function Page() {
       if (sealedLetters.length > 0) setLettersOpen(true)
       return
     }
-    const unlockAt =
-      unlock === 'In 7 days' ? Date.now() + 7 * 86400000 : Date.now() + 86400000
-    const updated = await saveSealedLetter({
-      createdAt: Date.now(),
-      unlockCondition: unlock,
-      unlockAt,
-      content: letter.trim(),
-    })
-    setSealedLetters(updated)
+    await sealLetter(letter, unlock === 'In 7 days' ? 7 : 1, unlock)
     setLetter('')
     setLetterSaved(true)
     setTimeout(() => setLetterSaved(false), 3200)
   }
 
+
   const waitingCount = sealedLetters.length
 
   return (
-    <main
-      className={`min-h-screen overflow-hidden px-4 pb-12 text-[#eeeaf3] sm:px-8 ${
-        mode === 'gentle' ? 'gentle-mode' : ''
-      }`}
-    >
-      <div className="aurora aurora-one" />
-      <div className="aurora aurora-two" />
-      <div className="aurora aurora-three" />
-
-      <nav className="relative z-10 mx-auto flex max-w-[1440px] items-center justify-between border-b border-white/[0.07] py-5">
-        <div className="flex items-center gap-3">
-          <div className="brand-mark">
-            <Sparkles size={16} />
-          </div>
-          <div>
-            <p className="font-serif text-lg tracking-[0.2em] text-white">LUMINA</p>
-            <p className="hidden text-[10px] uppercase tracking-[0.18em] text-white/40 sm:block">
-              your emotional sanctuary
-            </p>
-          </div>
-        </div>
-        <p className="hidden text-center font-serif text-sm italic text-white/45 lg:block">
-          You don&apos;t have to be happy to be worthy of peace.
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setImmersive(v => !v)}
-            className="support-button"
-            aria-pressed={immersive}
-          >
-            {immersive ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            <span className="hidden sm:inline">
-              {immersive ? 'Exit world view' : 'Sanctuary world view'}
-            </span>
-          </button>
-          <button onClick={() => setSupportOpen(true)} className="support-button">
-            <ShieldAlert size={14} />
-            <span className="hidden sm:inline">Immediate support</span>
-          </button>
-          <button onClick={() => setWelcomeOpen(true)} className="profile-pill">
-            <span>{firstName.slice(0, 1).toUpperCase()}</span>
-            {firstName}
-          </button>
-          <button
-            onClick={() => setMode('exhausted')}
-            aria-label="Switch to low stimulus mode"
-            className="icon-button"
-          >
-            <Moon size={16} />
-          </button>
-        </div>
-      </nav>
+    <div className={`relative mx-auto w-full max-w-[1440px] ${mode === 'gentle' ? 'gentle-mode' : ''}`}>
 
       <div className="relative z-10 mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 py-4">
         <div>
@@ -694,7 +415,7 @@ export default function Page() {
           tab={tab}
           setTab={setTab}
           orb={orb}
-          setOrb={handleOrbChange}
+          setOrb={setOrb}
           aura={aura}
           tags={tags}
           setTags={setTags}
@@ -702,7 +423,7 @@ export default function Page() {
           blooms={gardenBlooms}
           checkIns={checkIns}
           rainPlaying={rainPlaying}
-          onToggleRain={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+          onToggleRain={() => toggleRain()}
           breathActive={breathActive || (stuckOpen && step === 4)}
           onToggleBreath={() => setBreathActive(v => !v)}
           inWorldReleaseOpen={inWorldReleaseOpen}
@@ -1188,7 +909,7 @@ export default function Page() {
                 <Droplets size={18} />
               </div>
               <button
-                onClick={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+                onClick={() => toggleRain()}
                 className="primary-button"
               >
                 {rainPlaying ? (
@@ -1208,16 +929,6 @@ export default function Page() {
         </section>
       </div>
 
-      {supportOpen && (
-        <SupportModal
-          onClose={() => setSupportOpen(false)}
-          onBreathPacer={() => {
-            setSupportOpen(false)
-            setStep(4)
-            setStuckOpen(true)
-          }}
-        />
-      )}
       {stuckOpen && (
         <StuckModal step={step} setStep={setStep} onClose={() => setStuckOpen(false)} />
       )}
@@ -1232,16 +943,6 @@ export default function Page() {
           onClose={() => setProfileOpen(false)}
         />
       )}
-      {welcomeOpen && (
-        <WelcomeModal
-          name={name}
-          setName={setName}
-          pronouns={pronouns}
-          setPronouns={setPronouns}
-          save={saveProfile}
-          onClose={() => setWelcomeOpen(false)}
-        />
-      )}
       {lettersOpen && (
         <LettersModal
           firstName={firstName}
@@ -1249,69 +950,10 @@ export default function Page() {
           onClose={() => setLettersOpen(false)}
         />
       )}
-    </main>
+    </div>
   )
 }
 
-function toggleRain(
-  playing: boolean,
-  setPlaying: (v: boolean) => void,
-  ref: React.MutableRefObject<AudioEngineRef | null>
-) {
-  if (playing) {
-    ref.current?.ctx.close().catch(() => {})
-    ref.current = null
-    setPlaying(false)
-    return
-  }
-
-  const ctx = new AudioContext()
-  const masterGain = ctx.createGain()
-  masterGain.gain.value = 0.035
-
-  // 174Hz + 261Hz warm harmonic grounding oscillators
-  const nodes = [ctx.createOscillator(), ctx.createOscillator()]
-  nodes[0].frequency.value = 174
-  nodes[1].frequency.value = 261
-  nodes.forEach(n => {
-    n.type = 'sine'
-    n.connect(masterGain)
-    n.start()
-  })
-
-  // Procedural brown/pink rain noise buffer filtered through a warm 800Hz lowpass filter
-  const bufferSize = ctx.sampleRate * 3
-  const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
-  const output = noiseBuffer.getChannelData(0)
-  let lastOut = 0.0
-  for (let i = 0; i < bufferSize; i++) {
-    const white = Math.random() * 2 - 1
-    output[i] = (lastOut + 0.02 * white) / 1.02
-    lastOut = output[i]
-    output[i] *= 3.5
-  }
-
-  const rainSource = ctx.createBufferSource()
-  rainSource.buffer = noiseBuffer
-  rainSource.loop = true
-
-  const lowpass = ctx.createBiquadFilter()
-  lowpass.type = 'lowpass'
-  lowpass.frequency.value = 800
-  lowpass.Q.value = 0.7
-
-  const rainGain = ctx.createGain()
-  rainGain.gain.value = 0.055
-
-  rainSource.connect(lowpass)
-  lowpass.connect(rainGain)
-  rainGain.connect(ctx.destination)
-  rainSource.start()
-
-  masterGain.connect(ctx.destination)
-  ref.current = { ctx, nodes, noise: rainSource, gain: masterGain }
-  setPlaying(true)
-}
 
 function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void }) {
   return (
@@ -1724,113 +1366,6 @@ function SanctuaryStage({
   )
 }
 
-function SupportModal({
-  onClose,
-  onBreathPacer,
-}: {
-  onClose: () => void
-  onBreathPacer: () => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-card wide">
-        <button onClick={onClose} className="modal-close" aria-label="Close">
-          <X />
-        </button>
-        <div className="modal-icon">
-          <ShieldAlert />
-        </div>
-        <p className="eyebrow">You deserve support</p>
-        <h2 className="mt-2 font-serif text-3xl text-white">Need immediate care?</h2>
-        <p className="mt-3 text-sm leading-relaxed text-white/55">
-          If you might hurt yourself or someone else, please contact local emergency services
-          or a crisis counselor right now. You don&apos;t have to navigate this moment alone.
-        </p>
-
-        <div className="mt-5 grid gap-2.5 text-xs">
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
-            <p className="eyebrow text-[9px] text-[#edb4c5]">India · 24/7 Free &amp; Confidential</p>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-white/80">Tele-MANAS (National Helpline)</span>
-              <div className="flex flex-wrap gap-1.5">
-                <a href="tel:14416" className="secondary-button py-1.5 px-3 text-[11px]">
-                  Call 14416
-                </a>
-                <a href="tel:18008914416" className="secondary-button py-1.5 px-3 text-[11px]">
-                  1800-891-4416
-                </a>
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
-              <span className="text-white/70">Vandrevala Foundation</span>
-              <a href="tel:+919999666555" className="secondary-button py-1.5 px-3 text-[11px]">
-                +91 9999 666 555
-              </a>
-            </div>
-          </div>
-
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
-              <p className="eyebrow text-[9px]">US &amp; Canada</p>
-              <p className="mt-1 text-white/80">Suicide &amp; Crisis Lifeline</p>
-              <a
-                href="tel:988"
-                className="primary-button mt-2.5 w-full justify-center py-2 text-xs"
-              >
-                Call or text 988 <ArrowRight size={13} />
-              </a>
-            </div>
-
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
-              <p className="eyebrow text-[9px]">United Kingdom</p>
-              <p className="mt-1 text-white/80">NHS Mental Health &amp; Samaritans</p>
-              <div className="mt-2.5 flex gap-2">
-                <a
-                  href="tel:111"
-                  className="secondary-button flex-1 justify-center py-2 text-xs"
-                >
-                  NHS 111
-                </a>
-                <a
-                  href="tel:116123"
-                  className="secondary-button flex-1 justify-center py-2 text-xs"
-                >
-                  116 123
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
-            <div>
-              <p className="eyebrow text-[9px]">International / Everywhere</p>
-              <p className="mt-1 text-white/75">
-                Verified free, confidential support in 130+ countries
-              </p>
-            </div>
-            <a
-              href="https://findahelpline.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="secondary-button py-2 px-3.5 text-xs"
-            >
-              findahelpline.com <ArrowRight size={13} />
-            </a>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-          <button onClick={onBreathPacer} className="primary-button justify-center">
-            Open 60s breath pacer <Wind size={14} />
-          </button>
-          <button onClick={onClose} className="secondary-button">
-            Stay here and ground with me
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function StuckModal({
   step,
@@ -2137,90 +1672,23 @@ function LettersModal({
   )
 }
 
-function WelcomeModal({
-  name,
-  setName,
-  pronouns,
-  setPronouns,
-  save,
-  onClose,
-}: {
-  name: string
-  setName: (v: string) => void
-  pronouns: string
-  setPronouns: (v: string) => void
-  save: () => void
-  onClose: () => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-card">
-        <button onClick={onClose} className="modal-close" aria-label="Close">
-          <X />
-        </button>
-        <div className="modal-icon">
-          <Sparkles />
-        </div>
-        <p className="eyebrow">your sanctuary, your pace</p>
-        <h2 className="mt-2 font-serif text-3xl text-white">Enter your sanctuary</h2>
-        <p className="mt-3 text-sm leading-relaxed text-white/50">
-          Tell LUMINA what to call you. This stays on your device.
-        </p>
-        <label className="field-label">
-          Name
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="modal-input"
-            placeholder="Your name"
-          />
-        </label>
-        <label className="field-label">
-          Pronouns or comfort preference <span>(optional)</span>
-          <input
-            value={pronouns}
-            onChange={e => setPronouns(e.target.value)}
-            className="modal-input"
-            placeholder="she/her · gentle reminders"
-          />
-        </label>
-        <button onClick={save} className="primary-button mt-2 w-full justify-center">
-          Save my sanctuary <ArrowRight size={15} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function LowStimulus({
   onBack,
-  onSupport,
-  supportOpen,
-  onClose,
-  onBreathPacer,
   rainPlaying,
   onRain,
 }: {
   onBack: () => void
-  onSupport: () => void
-  supportOpen: boolean
-  onClose: () => void
-  onBreathPacer: () => void
   rainPlaying: boolean
   onRain: () => void
 }) {
   return (
-    <main className="low-stimulus">
+    <div className="low-stimulus !min-h-[70vh] rounded-[24px]">
       <div className="low-top">
         <button onClick={onBack} className="low-back">
           <RotateCcw size={14} /> return to sanctuary
         </button>
-        <button onClick={onSupport} className="support-button">
-          <ShieldAlert size={14} /> support
-        </button>
       </div>
-      <div className="low-center">
+      <div className="low-center !min-h-[55vh]">
         <div className="low-moon">
           <Moon size={27} />
         </div>
@@ -2242,7 +1710,6 @@ function LowStimulus({
           rain + slow breathing
         </p>
       </div>
-      {supportOpen && <SupportModal onClose={onClose} onBreathPacer={onBreathPacer} />}
-    </main>
+    </div>
   )
 }

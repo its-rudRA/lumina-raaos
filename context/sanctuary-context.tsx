@@ -251,9 +251,13 @@ export interface SanctuaryContextValue {
   setOrb: (pos: Orb) => void
   setCompanion: (companion: string) => void
   plantCheckIn: (tags: string[], note?: string) => Promise<void>
-  sealLetter: (text: string, daysToWait?: number) => Promise<void>
+  sealLetter: (text: string, daysToWait?: number, unlockCondition?: string) => Promise<void>
   addStarJarNote: (text: string) => Promise<void>
-  sendCompanionThought: (text: string, modeOverride?: string) => Promise<string>
+  sendCompanionThought: (
+    text: string,
+    modeOverride?: string,
+    extra?: { tags?: string[] }
+  ) => Promise<string>
   addMemory: (text: string, category: MemoryCategory) => Promise<void>
   removeMemory: (id: string) => Promise<void>
   updateBioRhythm: (bio: BioRhythmState) => Promise<void>
@@ -524,18 +528,21 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [update]
   )
 
-  const sealLetter = useCallback(async (text: string, daysToWait = 1) => {
-    const content = text.trim()
-    if (!content) return
-    const days = Math.max(1, Math.round(daysToWait))
-    const updated = await saveSealedLetter({
-      createdAt: Date.now(),
-      unlockCondition: days === 1 ? 'In 1 day' : `In ${days} days`,
-      unlockAt: Date.now() + days * 86400000,
-      content,
-    })
-    setSealedLetters(updated)
-  }, [])
+  const sealLetter = useCallback(
+    async (text: string, daysToWait = 1, unlockCondition?: string) => {
+      const content = text.trim()
+      if (!content) return
+      const days = Math.max(1, Math.round(daysToWait))
+      const updated = await saveSealedLetter({
+        createdAt: Date.now(),
+        unlockCondition: unlockCondition ?? (days === 1 ? 'In 1 day' : `In ${days} days`),
+        unlockAt: Date.now() + days * 86400000,
+        content,
+      })
+      setSealedLetters(updated)
+    },
+    []
+  )
 
   const addStarJarNote = useCallback(
     async (text: string) => {
@@ -609,7 +616,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   )
 
   const sendCompanionThought = useCallback(
-    async (text: string, modeOverride?: string) => {
+    async (text: string, modeOverride?: string, extra?: { tags?: string[] }) => {
       const raw = text.trim()
       if (!raw) return ''
 
@@ -636,6 +643,8 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         setCrisisAlert(true)
       } else {
         const snippet = raw.length > 68 ? `${raw.slice(0, 68)}…` : raw
+        const tags = extra?.tags ?? []
+        const activeTagsText = tags.length > 0 ? ` while holding ${tags.join(' and ').toLowerCase()}` : ''
         const restContext =
           bio.sleepQuality === 'exhausted'
             ? `Because you're running on ${bio.sleepHours}h of exhausted rest, everything feels heavier right now.`
@@ -645,9 +654,9 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         const anchorMemory = memories[0]?.text ? ` Remembering your note: “${memories[0].text}”` : ''
 
         const responses: Record<string, string> = {
-          'The Listener': `I hear you, ${firstName}—especially around “${snippet}”. ${restContext} You don't need to shrink or solve this right now.${anchorMemory}`,
-          'The Grounder': `Thank you for naming “${snippet}”, ${firstName}. Since you're arriving ${aura.label.toLowerCase()}, let's unclench your jaw, drop your shoulders, and take one slow breath.${anchorMemory}`,
-          'The Guide': `Holding “${snippet}” takes real energy, ${firstName}. ${restContext} What is one smaller, kinder expectation you can set for the next hour?${anchorMemory}`,
+          'The Listener': `I hear you, ${firstName}—especially around “${snippet}”${activeTagsText}. ${restContext} You don't need to shrink or solve this right now.${anchorMemory}`,
+          'The Grounder': `Thank you for naming “${snippet}”, ${firstName}. Since you're arriving ${aura.label.toLowerCase()}${activeTagsText}, let's unclench your jaw, drop your shoulders, and take one slow breath.${anchorMemory}`,
+          'The Guide': `Holding “${snippet}”${activeTagsText} takes real energy, ${firstName}. ${restContext} What is one smaller, kinder expectation you can set for the next hour?${anchorMemory}`,
           'Boundary Coach': `For “${snippet}”, here is a gentle boundary you can use today, ${firstName}: “I care about doing this well, and right now I need to step back and rest so I can return with a clear head.”${anchorMemory}`,
         }
         replyText = responses[companionMode] ?? responses['The Listener']

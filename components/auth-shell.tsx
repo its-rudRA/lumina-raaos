@@ -36,10 +36,12 @@ export function SanctuaryBackdrop() {
 }
 
 export function AuthShell({ children }: { children: ReactNode }) {
+  // `my-auto` centers short content but collapses to 0 on tall content, so the top
+  // never clips (unlike items-center / place-items-center on a fixed-height box).
   return (
-    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#080b11] px-4 py-10 text-[#eeeaf3]">
+    <main className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#080b11] px-4 py-10 text-[#eeeaf3] sm:py-14">
       <SanctuaryBackdrop />
-      <div className="relative z-10 flex w-full flex-col items-center">{children}</div>
+      <div className="relative z-10 my-auto flex w-full flex-col items-center">{children}</div>
     </main>
   )
 }
