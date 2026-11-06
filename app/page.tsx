@@ -30,7 +30,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { SanctuaryScene } from '@/components/sanctuary-scene'
+import { formatRelativeTime, SanctuaryScene } from '@/components/sanctuary-scene'
 import { useHydrated } from './hydration-guard'
 import {
   addCheckIn,
@@ -62,7 +62,7 @@ const CRISIS_PHRASES = [
   'no reason to live',
 ]
 
-export function containsCrisisSignal(text: string): boolean {
+function containsCrisisSignal(text: string): boolean {
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
   if (!normalized) return false
   return CRISIS_PHRASES.some(phrase => normalized.includes(phrase))
@@ -124,6 +124,8 @@ export default function Page() {
 
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
   const [sealedLetters, setSealedLetters] = useState<SealedLetter[]>([])
+  const [selectedBloom, setSelectedBloom] = useState<CheckInRecord | null>(null)
+  const [releaseBurstCount, setReleaseBurstCount] = useState(0)
 
   const [greeting, setGreeting] = useState('Welcome')
   const [date, setDate] = useState('')
@@ -475,6 +477,7 @@ export default function Page() {
   function release() {
     setWorry('')
     setReleased(true)
+    setReleaseBurstCount(c => c + 1)
     setTimeout(() => setReleased(false), 2600)
   }
 
@@ -659,7 +662,41 @@ export default function Page() {
                   )}
                 </h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {immersive && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      onClick={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+                      className="support-button"
+                    >
+                      <Droplets size={13} />
+                      <span>{rainPlaying ? 'Pause Rain' : 'Trigger 3:00 Rain'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setStep(4)
+                        setStuckOpen(true)
+                      }}
+                      className="support-button"
+                    >
+                      <Wind size={13} />
+                      <span>60s Breath Reset</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (tab === 'aura' && tags.length > 0) {
+                          void plant()
+                        } else {
+                          setTab('aura')
+                        }
+                      }}
+                      className="support-button"
+                    >
+                      <Flower2 size={13} />
+                      <span>Plant Check-In</span>
+                    </button>
+                  </div>
+                )}
                 <div className="tab-pill">
                   <button
                     onClick={() => setTab('aura')}
@@ -698,6 +735,9 @@ export default function Page() {
               checkIns={checkIns}
               rainPlaying={rainPlaying}
               immersive={immersive}
+              selectedBloom={selectedBloom}
+              setSelectedBloom={setSelectedBloom}
+              releaseBurstCount={releaseBurstCount}
             />
           </div>
 
@@ -1156,6 +1196,9 @@ function SanctuaryStage({
   checkIns,
   rainPlaying,
   immersive,
+  selectedBloom,
+  setSelectedBloom,
+  releaseBurstCount,
 }: {
   tab: 'aura' | 'garden'
   setTab: (v: 'aura' | 'garden') => void
@@ -1169,6 +1212,9 @@ function SanctuaryStage({
   checkIns: CheckInRecord[]
   rainPlaying: boolean
   immersive: boolean
+  selectedBloom: CheckInRecord | null
+  setSelectedBloom: (b: CheckInRecord | null) => void
+  releaseBurstCount: number
 }) {
   const choices = [
     'Tight chest',
@@ -1189,6 +1235,9 @@ function SanctuaryStage({
         checkIns={checkIns}
         rainPlaying={rainPlaying}
         immersive={immersive}
+        selectedBloom={selectedBloom}
+        onSelectBloom={setSelectedBloom}
+        releaseBurstCount={releaseBurstCount}
       />
 
       {tab === 'aura' ? (
@@ -1222,18 +1271,59 @@ function SanctuaryStage({
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-md">
-          <div>
-            <p className="font-serif text-lg text-white/85">
-              Your inner garden is not measured in streaks. It grows when you return.
-            </p>
-            <p className="mt-1 text-xs text-white/45">
-              {Math.max(blooms, checkIns.length)} bioluminescent lotus blooms floating on your
-              sanctuary pond.
-            </p>
+          {selectedBloom ? (
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="eyebrow text-[9px] text-[#a4d1c8]">
+                  selected 3d lotus memory
+                </span>
+                <span className="text-xs text-white/40">
+                  · {formatRelativeTime(selectedBloom.timestamp)}
+                </span>
+              </div>
+              <p className="mt-1 font-serif text-xl text-white">
+                {selectedBloom.auraLabel}
+              </p>
+              {selectedBloom.tags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selectedBloom.tags.map(t => (
+                    <span
+                      key={t}
+                      className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-0.5 text-[11px] text-[#f4d9e2]"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="font-serif text-lg text-white/85">
+                Your inner garden is not measured in streaks. It grows when you return.
+              </p>
+              <p className="mt-1 text-xs text-white/45">
+                {Math.max(blooms, checkIns.length)} bioluminescent lotus blooms floating on your
+                sanctuary pond · Click any 3D lotus to inspect its memory.
+              </p>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            {selectedBloom && (
+              <button
+                onClick={() => setSelectedBloom(null)}
+                className="secondary-button py-2 px-3 text-xs"
+              >
+                All blooms
+              </button>
+            )}
+            <button
+              onClick={() => setTab('aura')}
+              className="secondary-button py-2 px-3.5 text-xs"
+            >
+              Sculpt new check-in <ArrowRight size={13} />
+            </button>
           </div>
-          <button onClick={() => setTab('aura')} className="secondary-button py-2 px-3.5 text-xs">
-            Sculpt new check-in <ArrowRight size={13} />
-          </button>
         </div>
       )}
     </div>
