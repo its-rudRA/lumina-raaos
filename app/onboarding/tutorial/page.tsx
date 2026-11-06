@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,8 +21,21 @@ import {
   Wind,
 } from 'lucide-react'
 import { AuthShell } from '@/components/auth-shell'
-import { SanctuaryScene } from '@/components/sanctuary-scene'
+import { LuminaLoader } from '@/components/lumina-loader'
 import { deriveAura, useSanctuary, type Orb } from '@/context/sanctuary-context'
+
+// Three.js is loaded lazily on the client so the route itself renders instantly.
+const SanctuaryScene = dynamic(
+  () => import('@/components/sanctuary-scene').then(m => m.SanctuaryScene),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="absolute inset-0 grid place-items-center bg-[#0a0914]" role="status" aria-label="Loading 3D garden">
+        <div className="lumina-orb" aria-hidden />
+      </div>
+    ),
+  }
+)
 
 const TOTAL = 7
 const glass = 'rounded-[24px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-xl'
@@ -544,11 +558,7 @@ export default function TutorialPage() {
   }
 
   if (!isHydrated || !authUser) {
-    return (
-      <AuthShell>
-        <div className="lumina-orb" role="status" aria-label="Loading" />
-      </AuthShell>
-    )
+    return <LuminaLoader />
   }
 
   const current = STEPS[step - 1]

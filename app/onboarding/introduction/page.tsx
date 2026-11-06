@@ -14,6 +14,7 @@ import {
   Wind,
 } from 'lucide-react'
 import { AuthShell } from '@/components/auth-shell'
+import { LuminaLoader } from '@/components/lumina-loader'
 import { useSanctuary } from '@/context/sanctuary-context'
 
 const PILLARS = [
@@ -69,11 +70,7 @@ export default function IntroductionPage() {
   }
 
   if (!isHydrated || !authUser) {
-    return (
-      <AuthShell>
-        <div className="lumina-orb" role="status" aria-label="Loading" />
-      </AuthShell>
-    )
+    return <LuminaLoader />
   }
 
   return (

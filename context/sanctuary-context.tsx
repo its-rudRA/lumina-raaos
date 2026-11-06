@@ -296,11 +296,22 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     setProfile(next)
   }, [])
 
-  /** Merge a patch into memory immediately, then persist it to IndexedDB. */
+  /**
+   * Merge a patch into memory immediately (optimistic), then persist to IndexedDB.
+   * The write is wrapped in try/catch + a 1500ms timeout so a locked/blocked IndexedDB
+   * (e.g. Incognito) can never leave callers awaiting forever.
+   */
   const update = useCallback(
     async (patch: Partial<ProfileData>) => {
       applyProfile({ ...profileRef.current, ...patch })
-      await patchSanctuaryState(patch)
+      try {
+        await Promise.race([
+          patchSanctuaryState(patch),
+          new Promise<void>(resolve => window.setTimeout(resolve, 1500)),
+        ])
+      } catch {
+        // State is already updated in memory; persistence is best-effort.
+      }
     },
     [applyProfile]
   )
@@ -332,10 +343,16 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     async function hydrate() {
+      // Never let a blocked/slow IndexedDB leave routes stuck on a loader.
+      const withTimeout = <T,>(p: Promise<T>, fallback: T) =>
+        Promise.race([
+          p.catch(() => fallback),
+          new Promise<T>(resolve => window.setTimeout(() => resolve(fallback), 4000)),
+        ])
       const [stored, storedCheckIns, storedLetters] = await Promise.all([
-        loadSanctuaryState(),
-        getCheckIns(),
-        getSealedLetters(),
+        withTimeout(loadSanctuaryState(), null),
+        withTimeout(getCheckIns(), [] as CheckInRecord[]),
+        withTimeout(getSealedLetters(), [] as SealedLetter[]),
       ])
       if (cancelled) return
       adoptStored(stored)

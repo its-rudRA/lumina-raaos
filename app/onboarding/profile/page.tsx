@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck } from 'lucide-react'
 import { AuthShell } from '@/components/auth-shell'
+import { ProfileSkeleton } from '@/components/lumina-loader'
 import { useSanctuary } from '@/context/sanctuary-context'
 import type { WellnessProfilePreferences } from '@/lib/db'
 
@@ -118,6 +119,11 @@ export default function ProfileOnboardingPage() {
     if (isHydrated && !authUser) router.replace('/welcome')
   }, [isHydrated, authUser, router])
 
+  // Warm the next route so the transition after saving is instant.
+  useEffect(() => {
+    router.prefetch('/onboarding/tutorial')
+  }, [router])
+
   // Pre-populate once from any previously saved answers.
   useEffect(() => {
     if (!isHydrated || seeded) return
@@ -140,11 +146,7 @@ export default function ProfileOnboardingPage() {
   }, [isHydrated, onboarding, seeded])
 
   if (!isHydrated || !authUser) {
-    return (
-      <AuthShell>
-        <div className="lumina-orb" role="status" aria-label="Loading" />
-      </AuthShell>
-    )
+    return <ProfileSkeleton />
   }
 
   const toggle = (list: string[], set: (v: string[]) => void, value: string) =>
@@ -184,16 +186,23 @@ export default function ProfileOnboardingPage() {
         ...(optionalRhythmNote ? { optionalRhythmNote } : {}),
         completedAt: Date.now(),
       }
-      await saveWellnessProfile(preferences)
+      // State updates are optimistic and each IndexedDB write is time-bounded in the
+      // provider, so these run together and can never hold the button forever.
+      const companionChoice = helpGoals.includes('Building healthy boundaries')
+        ? 'Boundary Coach'
+        : interactionStyle === 'AI Listener'
+          ? 'The Listener'
+          : interactionStyle === 'Gentle guided exercises'
+            ? 'The Grounder'
+            : null
+      if (companionChoice) setCompanion(companionChoice)
 
-      // Personalize defaults from the answers.
-      if (helpGoals.includes('Building healthy boundaries')) setCompanion('Boundary Coach')
-      else if (interactionStyle === 'AI Listener') setCompanion('The Listener')
-      else if (interactionStyle === 'Gentle guided exercises') setCompanion('The Grounder')
-
-      if (comfortEnvironment === 'Minimal and quiet') {
-        await updateProfileSettings({ sensoryMode: 'gentle' })
-      }
+      await Promise.all([
+        saveWellnessProfile(preferences),
+        comfortEnvironment === 'Minimal and quiet'
+          ? updateProfileSettings({ sensoryMode: 'gentle' })
+          : Promise.resolve(),
+      ])
 
       router.push('/onboarding/tutorial')
     } catch {
