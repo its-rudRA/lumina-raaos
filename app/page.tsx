@@ -120,6 +120,7 @@ export default function Page() {
   const [tags, setTags] = useState<string[]>([])
   const [gardenBlooms, setGardenBlooms] = useState(3)
   const [rainPlaying, setRainPlaying] = useState(false)
+  const [breathActive, setBreathActive] = useState(false)
   const [listening, setListening] = useState(false)
 
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
@@ -556,7 +557,7 @@ export default function Page() {
         </div>
       </nav>
 
-      <div className="relative z-10 mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 py-5">
+      <div className="relative z-10 mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 py-4">
         <div>
           <p className="eyebrow" suppressHydrationWarning>
             {hydrated ? date : '\u00A0'}
@@ -568,12 +569,41 @@ export default function Page() {
         <ModeToggle mode={mode} setMode={setMode} />
       </div>
 
-      <div
-        className={`relative z-10 mx-auto grid max-w-[1440px] gap-5 ${
-          immersive ? 'xl:grid-cols-2' : 'xl:grid-cols-[1fr_1.25fr_0.88fr]'
-        }`}
-      >
-        <section className={`flex flex-col gap-5 ${immersive ? 'xl:order-2' : ''}`}>
+      {/* FULL-WIDTH PANORAMIC 3D SANCTUARY STAGE */}
+      <section className="relative z-10 mx-auto w-full max-w-[1440px]">
+        <SanctuaryStage
+          tab={tab}
+          setTab={setTab}
+          orb={orb}
+          setOrb={handleOrbChange}
+          aura={aura}
+          tags={tags}
+          setTags={setTags}
+          plant={plant}
+          blooms={gardenBlooms}
+          checkIns={checkIns}
+          rainPlaying={rainPlaying}
+          onToggleRain={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+          breathActive={breathActive || (stuckOpen && step === 4)}
+          onToggleBreath={() => setBreathActive(v => !v)}
+          onTriggerRelease={() => {
+            setReleaseBurstCount(c => c + 1)
+            setReleased(true)
+            setTimeout(() => setReleased(false), 2600)
+          }}
+          weatherMetrics={weatherMetrics}
+          immersive={immersive}
+          setImmersive={setImmersive}
+          selectedBloom={selectedBloom}
+          setSelectedBloom={setSelectedBloom}
+          releaseBurstCount={releaseBurstCount}
+        />
+      </section>
+
+      {/* 3-COLUMN SANCTUARY CHAMBERS BELOW THE PANORAMIC STAGE */}
+      <div className="relative z-10 mx-auto mt-5 grid max-w-[1440px] gap-5 xl:grid-cols-3">
+        {/* CHAMBER 1: Emotional Weather + Overthinking Reset + Gentle Returns */}
+        <section className="flex flex-col gap-5">
           <div className={`${glass} p-6`}>
             <div className="mb-5 flex items-start justify-between">
               <div>
@@ -635,111 +665,6 @@ export default function Page() {
               Open a gentle reset <ArrowRight size={15} />
             </button>
           </div>
-        </section>
-
-        <section
-          className={`flex flex-col gap-5 ${
-            immersive ? 'xl:order-1 xl:col-span-2' : ''
-          }`}
-        >
-          <div
-            className={`${glass} relative overflow-hidden p-6 transition-all duration-500 sm:p-8 ${
-              immersive ? 'min-h-[76vh]' : 'min-h-[445px]'
-            }`}
-          >
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="eyebrow">Your inner landscape · 3D living sanctuary</p>
-                <h2 className="mt-2 font-serif text-3xl text-white">
-                  {tab === 'aura' ? (
-                    <>
-                      How are you <em>arriving?</em>
-                    </>
-                  ) : (
-                    <>
-                      Your bioluminescent <em>garden.</em>
-                    </>
-                  )}
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {immersive && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      onClick={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
-                      className="support-button"
-                    >
-                      <Droplets size={13} />
-                      <span>{rainPlaying ? 'Pause Rain' : 'Trigger 3:00 Rain'}</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setStep(4)
-                        setStuckOpen(true)
-                      }}
-                      className="support-button"
-                    >
-                      <Wind size={13} />
-                      <span>60s Breath Reset</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (tab === 'aura' && tags.length > 0) {
-                          void plant()
-                        } else {
-                          setTab('aura')
-                        }
-                      }}
-                      className="support-button"
-                    >
-                      <Flower2 size={13} />
-                      <span>Plant Check-In</span>
-                    </button>
-                  </div>
-                )}
-                <div className="tab-pill">
-                  <button
-                    onClick={() => setTab('aura')}
-                    className={tab === 'aura' ? 'active' : ''}
-                  >
-                    Aura
-                  </button>
-                  <button
-                    onClick={() => setTab('garden')}
-                    className={tab === 'garden' ? 'active' : ''}
-                  >
-                    Garden
-                  </button>
-                </div>
-                <button
-                  onClick={() => setImmersive(v => !v)}
-                  aria-label={immersive ? 'Exit Sanctuary World View' : 'Sanctuary World View'}
-                  title={immersive ? 'Compact Sanctuary View' : 'Expand 3D Sanctuary World View'}
-                  className="icon-button"
-                >
-                  {immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                </button>
-              </div>
-            </div>
-
-            <SanctuaryStage
-              tab={tab}
-              setTab={setTab}
-              orb={orb}
-              setOrb={handleOrbChange}
-              aura={aura}
-              tags={tags}
-              setTags={setTags}
-              plant={plant}
-              blooms={gardenBlooms}
-              checkIns={checkIns}
-              rainPlaying={rainPlaying}
-              immersive={immersive}
-              selectedBloom={selectedBloom}
-              setSelectedBloom={setSelectedBloom}
-              releaseBurstCount={releaseBurstCount}
-            />
-          </div>
 
           <div className={`${glass} flex items-center justify-between gap-4 p-5`}>
             <div className="flex items-center gap-3">
@@ -761,7 +686,8 @@ export default function Page() {
           </div>
         </section>
 
-        <section className={`flex flex-col gap-5 ${immersive ? 'xl:order-3' : ''}`}>
+        {/* CHAMBER 2: Soul Companion + Personal Calm DNA */}
+        <section className="flex flex-col gap-5">
           <div className={`${glass} p-6`}>
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -868,147 +794,154 @@ export default function Page() {
             </button>
           </div>
         </section>
-      </div>
 
-      <section className="relative z-10 mx-auto mt-5 grid max-w-[1440px] gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className={`${glass} p-6 sm:p-8`}>
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="eyebrow">Release room</p>
-              <h2 className="mt-2 font-serif text-2xl text-white">A place to put it down.</h2>
-            </div>
-            <div className="tab-pill">
-              <button
-                onClick={() => setRitual('burn')}
-                className={ritual === 'burn' ? 'active' : ''}
-              >
-                Burn &amp; release
-              </button>
-              <button
-                onClick={() => setRitual('letter')}
-                className={ritual === 'letter' ? 'active' : ''}
-              >
-                Future self
-              </button>
-            </div>
-          </div>
-
-          {ritual === 'burn' ? (
-            <div>
-              <div className={`particle-field ${released ? 'visible' : ''}`}>
-                {Array.from({ length: 12 }, (_, i) => (
-                  <i key={i} style={{ '--i': i } as React.CSSProperties}>
-                    ✦
-                  </i>
-                ))}
+        {/* CHAMBER 3: Release Room (Burn & Release + Future Self Letters) + 3:00 Rain Grounding */}
+        <section className="flex flex-col gap-5">
+          <div className={`${glass} p-6`}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="eyebrow">Release room</p>
+                <h2 className="mt-1.5 font-serif text-2xl text-white">
+                  A place to put it down.
+                </h2>
               </div>
-              <textarea
-                value={worry}
-                onChange={e => setWorry(e.target.value)}
-                placeholder="What feels too loud to carry right now?"
-                className={`ritual-textarea ${released ? 'fading' : ''}`}
-              />
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <p className="text-xs text-white/35">
-                  <LockKeyhole size={12} className="mr-1 inline" />
-                  Never saved. Released tonight.
-                </p>
-                <button onClick={release} className="primary-button">
-                  {released ? (
-                    <>
-                      <Sparkles size={15} />
-                      Dissolved
-                    </>
-                  ) : (
-                    <>
-                      <Flame size={15} />
-                      Dissolve into starlight
-                    </>
-                  )}
+              <div className="tab-pill">
+                <button
+                  onClick={() => setRitual('burn')}
+                  className={ritual === 'burn' ? 'active' : ''}
+                >
+                  Burn &amp; release
+                </button>
+                <button
+                  onClick={() => setRitual('letter')}
+                  className={ritual === 'letter' ? 'active' : ''}
+                >
+                  Future self
                 </button>
               </div>
             </div>
-          ) : (
-            <div>
-              <textarea
-                value={letter}
-                onChange={e => setLetter(e.target.value)}
-                placeholder={`Dear ${firstName}, when this day feels overwhelming...`}
-                className="ritual-textarea"
-              />
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={unlock}
-                    onChange={e => setUnlock(e.target.value)}
-                    className="unlock-select"
-                  >
-                    <option>Next heavy day</option>
-                    <option>In 7 days</option>
-                  </select>
-                  {waitingCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setLettersOpen(true)}
-                      className="secondary-button text-xs"
-                    >
-                      <MailOpen size={13} />
-                      View {waitingCount} sealed {waitingCount === 1 ? 'letter' : 'letters'}
-                    </button>
-                  )}
+
+            {ritual === 'burn' ? (
+              <div>
+                <div className={`particle-field ${released ? 'visible' : ''}`}>
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <i key={i} style={{ '--i': i } as React.CSSProperties}>
+                      ✦
+                    </i>
+                  ))}
                 </div>
-                <button onClick={handleSealLetter} className="primary-button">
-                  {letterSaved || (!letter.trim() && waitingCount > 0) ? (
-                    <>
-                      <Check size={15} />
-                      {waitingCount || 1} sealed {waitingCount === 1 ? 'letter' : 'letters'} waiting
-                    </>
-                  ) : (
-                    <>
-                      <Star size={15} />
-                      Seal for {firstName}
-                    </>
-                  )}
-                </button>
+                <textarea
+                  value={worry}
+                  onChange={e => setWorry(e.target.value)}
+                  placeholder="What feels too loud to carry right now?"
+                  className={`ritual-textarea ${released ? 'fading' : ''}`}
+                />
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-xs text-white/35">
+                    <LockKeyhole size={12} className="mr-1 inline" />
+                    Never saved. Released tonight.
+                  </p>
+                  <button onClick={release} className="primary-button">
+                    {released ? (
+                      <>
+                        <Sparkles size={15} />
+                        Dissolved
+                      </>
+                    ) : (
+                      <>
+                        <Flame size={15} />
+                        Dissolve into starlight
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div>
+                <textarea
+                  value={letter}
+                  onChange={e => setLetter(e.target.value)}
+                  placeholder={`Dear ${firstName}, when this day feels overwhelming...`}
+                  className="ritual-textarea"
+                />
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={unlock}
+                      onChange={e => setUnlock(e.target.value)}
+                      className="unlock-select"
+                    >
+                      <option>Next heavy day</option>
+                      <option>In 7 days</option>
+                    </select>
+                    {waitingCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setLettersOpen(true)}
+                        className="secondary-button text-xs"
+                      >
+                        <MailOpen size={13} />
+                        View {waitingCount} sealed {waitingCount === 1 ? 'letter' : 'letters'}
+                      </button>
+                    )}
+                  </div>
+                  <button onClick={handleSealLetter} className="primary-button">
+                    {letterSaved || (!letter.trim() && waitingCount > 0) ? (
+                      <>
+                        <Check size={15} />
+                        {waitingCount || 1} sealed {waitingCount === 1 ? 'letter' : 'letters'}{' '}
+                        waiting
+                      </>
+                    ) : (
+                      <>
+                        <Star size={15} />
+                        Seal for {firstName}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
-        <div className={`${glass} flex flex-col justify-between p-6 sm:p-8`}>
-          <div>
-            <p className="eyebrow">A soft reset</p>
-            <h2 className="mt-2 font-serif text-2xl text-white">Rain for your nervous system.</h2>
-            <p className="mt-3 text-sm leading-relaxed text-white/45">
-              Three minutes of rain and slow breathing. You don&apos;t need to do anything else.
-            </p>
-          </div>
-          <div className="mt-7 flex items-center justify-between">
-            <div className={`rain-rings ${rainPlaying ? 'playing' : ''}`}>
-              <span />
-              <span />
-              <span />
-              <Droplets size={18} />
+          <div className={`${glass} flex flex-col justify-between p-6`}>
+            <div>
+              <p className="eyebrow">A soft reset</p>
+              <h2 className="mt-1.5 font-serif text-2xl text-white">
+                Rain for your nervous system.
+              </h2>
+              <p className="mt-2.5 text-sm leading-relaxed text-white/45">
+                Three minutes of rain and slow breathing. You don&apos;t need to do anything
+                else.
+              </p>
             </div>
-            <button
-              onClick={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
-              className="primary-button"
-            >
-              {rainPlaying ? (
-                <>
-                  <span className="pause-bars" />
-                  Pause rain
-                </>
-              ) : (
-                <>
-                  <Play size={14} fill="currentColor" />
-                  Begin 3:00
-                </>
-              )}
-            </button>
+            <div className="mt-6 flex items-center justify-between">
+              <div className={`rain-rings ${rainPlaying ? 'playing' : ''}`}>
+                <span />
+                <span />
+                <span />
+                <Droplets size={18} />
+              </div>
+              <button
+                onClick={() => toggleRain(rainPlaying, setRainPlaying, audioRef)}
+                className="primary-button"
+              >
+                {rainPlaying ? (
+                  <>
+                    <span className="pause-bars" />
+                    Pause rain
+                  </>
+                ) : (
+                  <>
+                    <Play size={14} fill="currentColor" />
+                    Begin 3:00
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       {supportOpen && (
         <SupportModal
@@ -1195,7 +1128,13 @@ function SanctuaryStage({
   blooms,
   checkIns,
   rainPlaying,
+  onToggleRain,
+  breathActive,
+  onToggleBreath,
+  onTriggerRelease,
+  weatherMetrics,
   immersive,
+  setImmersive,
   selectedBloom,
   setSelectedBloom,
   releaseBurstCount,
@@ -1211,7 +1150,18 @@ function SanctuaryStage({
   blooms: number
   checkIns: CheckInRecord[]
   rainPlaying: boolean
+  onToggleRain: () => void
+  breathActive: boolean
+  onToggleBreath: () => void
+  onTriggerRelease: () => void
+  weatherMetrics: {
+    battery: number
+    load: number
+    summaryFirst: string
+    summaryEm: string
+  }
   immersive: boolean
+  setImmersive: (fn: (v: boolean) => boolean) => void
   selectedBloom: CheckInRecord | null
   setSelectedBloom: (b: CheckInRecord | null) => void
   releaseBurstCount: number
@@ -1223,9 +1173,15 @@ function SanctuaryStage({
     'Quietly tired',
     'Need comfort',
   ]
+  const totalBlooms = Math.max(blooms, checkIns.length)
 
   return (
-    <div className="aura-wrap">
+    <div
+      className={`${glass} relative w-full overflow-hidden p-2 transition-all duration-500 sm:p-3 ${
+        immersive ? 'h-[74vh] min-h-[560px]' : 'h-[460px] sm:h-[500px]'
+      }`}
+    >
+      {/* 3D WebGL Sanctuary Canvas */}
       <SanctuaryScene
         tab={tab}
         orb={orb}
@@ -1235,97 +1191,189 @@ function SanctuaryStage({
         checkIns={checkIns}
         rainPlaying={rainPlaying}
         immersive={immersive}
+        breathActive={breathActive}
         selectedBloom={selectedBloom}
         onSelectBloom={setSelectedBloom}
         releaseBurstCount={releaseBurstCount}
       />
 
-      {tab === 'aura' ? (
-        <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-md">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <p className="font-serif text-2xl" style={{ color: aura.color }}>
-                {aura.label}
-              </p>
-              <p className="mt-1 text-xs text-white/50">{aura.note}</p>
-            </div>
-            <span className="text-xs text-white/35">drag the 3D light core</span>
+      {/* TOP-LEFT FLOATING PILL (Weather Summary Badge + Mode Switcher) */}
+      <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex flex-wrap items-center justify-between gap-2 sm:left-6 sm:right-6 sm:top-5">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+          <div className="hidden items-center gap-2 rounded-full border border-white/[0.1] bg-[#0c0a16]/75 px-3.5 py-1.5 text-[11px] text-white/75 backdrop-blur-xl md:flex">
+            <CloudSun size={14} className="text-[#e7b0ba]" />
+            <span>
+              {weatherMetrics.summaryFirst} <em>{weatherMetrics.summaryEm}</em>
+            </span>
+            <span className="text-white/25">·</span>
+            <span>Battery {weatherMetrics.battery}%</span>
+            <span className="text-white/25">·</span>
+            <span>Load {weatherMetrics.load}%</span>
           </div>
-          <div className="tag-row">
-            {choices.map(tag => (
-              <button
-                key={tag}
-                onClick={() =>
-                  setTags(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag])
-                }
-                className={tags.includes(tag) ? 'selected' : ''}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          <button onClick={plant} disabled={!tags.length} className="plant-button">
-            <Flower2 size={14} />
-            Plant this check-in into your 3D Garden
-          </button>
-        </div>
-      ) : (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-md">
-          {selectedBloom ? (
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="eyebrow text-[9px] text-[#a4d1c8]">
-                  selected 3d lotus memory
-                </span>
-                <span className="text-xs text-white/40">
-                  · {formatRelativeTime(selectedBloom.timestamp)}
-                </span>
-              </div>
-              <p className="mt-1 font-serif text-xl text-white">
-                {selectedBloom.auraLabel}
-              </p>
-              {selectedBloom.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {selectedBloom.tags.map(t => (
-                    <span
-                      key={t}
-                      className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-0.5 text-[11px] text-[#f4d9e2]"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <p className="font-serif text-lg text-white/85">
-                Your inner garden is not measured in streaks. It grows when you return.
-              </p>
-              <p className="mt-1 text-xs text-white/45">
-                {Math.max(blooms, checkIns.length)} bioluminescent lotus blooms floating on your
-                sanctuary pond · Click any 3D lotus to inspect its memory.
-              </p>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            {selectedBloom && (
-              <button
-                onClick={() => setSelectedBloom(null)}
-                className="secondary-button py-2 px-3 text-xs"
-              >
-                All blooms
-              </button>
-            )}
+
+          <div className="tab-pill bg-[#0c0a16]/80 backdrop-blur-xl">
             <button
               onClick={() => setTab('aura')}
-              className="secondary-button py-2 px-3.5 text-xs"
+              className={tab === 'aura' ? 'active' : ''}
             >
-              Sculpt new check-in <ArrowRight size={13} />
+              Sculpt Aura
+            </button>
+            <button
+              onClick={() => setTab('garden')}
+              className={tab === 'garden' ? 'active' : ''}
+            >
+              Living Garden ({totalBlooms} blooms)
             </button>
           </div>
         </div>
-      )}
+
+        {/* TOP-RIGHT FLOATING PILLS (One-Click Ritual Triggers + Expand View) */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={onToggleRain}
+            aria-pressed={rainPlaying}
+            className={`support-button bg-[#0c0a16]/75 backdrop-blur-xl ${
+              rainPlaying ? 'border-[#91cabe]/50 text-[#a5d4ca]' : ''
+            }`}
+          >
+            <Droplets size={13} />
+            <span>{rainPlaying ? 'Pause Rain' : '3:00 Rain'}</span>
+          </button>
+          <button
+            onClick={onToggleBreath}
+            aria-pressed={breathActive}
+            className={`support-button bg-[#0c0a16]/75 backdrop-blur-xl ${
+              breathActive ? 'border-[#e8b8c7]/50 text-[#f4d9e2]' : ''
+            }`}
+          >
+            <Wind size={13} />
+            <span>{breathActive ? 'Breathing (4s/6s)' : '60s Breath Reset'}</span>
+          </button>
+          <button
+            onClick={onTriggerRelease}
+            className="support-button hidden bg-[#0c0a16]/75 backdrop-blur-xl sm:inline-flex"
+          >
+            <Flame size={13} />
+            <span>Release Worry</span>
+          </button>
+          <button
+            onClick={() => setImmersive(v => !v)}
+            aria-label={immersive ? 'Exit Expand View' : 'Expand View'}
+            title={immersive ? 'Standard View' : 'Expand View'}
+            className="support-button bg-[#0c0a16]/75 backdrop-blur-xl"
+          >
+            {immersive ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span className="hidden lg:inline">
+              {immersive ? 'Standard View' : 'Expand View'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* BOTTOM FLOATING GLASS DOCK (Inside the 3D Canvas) */}
+      <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10 sm:bottom-5 sm:left-6 sm:right-6">
+        {tab === 'aura' ? (
+          <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-white/[0.11] bg-[#0b0914]/80 px-4 py-3 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
+            {/* Left: Current Aura Dot, Title & Short Note */}
+            <div className="flex items-center gap-3">
+              <span
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{
+                  background: aura.color,
+                  boxShadow: `0 0 14px ${aura.color}`,
+                }}
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-serif text-lg leading-none" style={{ color: aura.color }}>
+                    {aura.label}
+                  </p>
+                  <span className="hidden text-[10px] uppercase tracking-wider text-white/30 sm:inline">
+                    · drag wisp to sculpt
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/50">{aura.note}</p>
+              </div>
+            </div>
+
+            {/* Center: 5 Somatic Tag Pills */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {choices.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() =>
+                    setTags(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag])
+                  }
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                    tags.includes(tag)
+                      ? 'border-[#e1acc1]/60 bg-[#daa9c2]/20 text-[#f4d9e2]'
+                      : 'border-white/[0.09] bg-white/[0.03] text-white/55 hover:text-white/85'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+
+            {/* Right: High-Contrast Plant Check-In CTA */}
+            <button
+              onClick={plant}
+              disabled={!tags.length}
+              className="primary-button shrink-0 justify-center py-2 px-4 text-xs"
+            >
+              <Flower2 size={14} />
+              Plant check-in
+            </button>
+          </div>
+        ) : (
+          <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.11] bg-[#0b0914]/80 px-4 py-3 backdrop-blur-xl">
+            {selectedBloom ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="eyebrow rounded-full border border-[#a4d1c8]/30 bg-[#a4d1c8]/10 px-2.5 py-1 text-[9px] text-[#a4d1c8]">
+                  Lotus Memory · {formatRelativeTime(selectedBloom.timestamp)}
+                </span>
+                <span className="font-serif text-lg text-white">
+                  {selectedBloom.auraLabel}
+                </span>
+                {selectedBloom.tags.map(t => (
+                  <span
+                    key={t}
+                    className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-0.5 text-[11px] text-[#f4d9e2]"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <p className="font-serif text-base text-white/90">
+                  Your inner garden is not measured in streaks. It grows when you return.
+                </p>
+                <p className="text-xs text-white/45">
+                  {totalBlooms} bioluminescent lotus blooms floating before the Moon Gate · Click
+                  any lotus to inspect its memory.
+                </p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {selectedBloom && (
+                <button
+                  onClick={() => setSelectedBloom(null)}
+                  className="secondary-button py-1.5 px-3 text-xs"
+                >
+                  Reset pond view
+                </button>
+              )}
+              <button
+                onClick={() => setTab('aura')}
+                className="primary-button py-2 px-4 text-xs"
+              >
+                Sculpt Aura <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
