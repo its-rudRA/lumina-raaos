@@ -473,6 +473,20 @@ export async function getSealedLetters(): Promise<SealedLetter[]> {
   }
 }
 
+export async function removeStarJarNote(idOrIndex: string | number): Promise<StarJarNote[]> {
+  try {
+    const existing = await loadSanctuaryState()
+    const current = existing?.starJar ?? []
+    const next = current.filter((note, idx) =>
+      typeof idOrIndex === 'number' ? idx !== idOrIndex : note.id !== idOrIndex
+    )
+    await patchSanctuaryState({ starJar: next })
+    return next
+  } catch {
+    return []
+  }
+}
+
 export interface SanctuaryExport {
   exportedAt: string
   app: string

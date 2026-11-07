@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -99,14 +99,18 @@ export function AppShell({
   const [moreOpen, setMoreOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
   const [breathOpen, setBreathOpen] = useState(false)
+  const didRedirectRef = useRef(false)
 
   const ready = isHydrated && !isLoading
 
-  // Auth guard (never redirects while data is still hydrating).
+  // Auth guard (never redirects while data is still hydrating, and only redirects once if needed).
   useEffect(() => {
-    if (!ready) return
-    if (!authUser) router.replace('/welcome')
-  }, [ready, authUser, router])
+    if (!ready || didRedirectRef.current) return
+    if (!authUser && pathname !== '/welcome') {
+      didRedirectRef.current = true
+      router.replace('/welcome')
+    }
+  }, [ready, authUser, pathname, router])
 
   // Any on-device crisis detection opens the support modal automatically.
   useEffect(() => {
@@ -190,6 +194,7 @@ export function AppShell({
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    prefetch={active ? false : undefined}
                     aria-current={active ? 'page' : undefined}
                     title={collapsed ? item.label : undefined}
                     className={`group flex items-center gap-2.5 rounded-xl border px-3 py-1.5 transition ${

@@ -129,9 +129,9 @@ function HomeContent() {
   }, [checkIns, bioRhythm, orb])
 
   // Suggested Calming Activity dynamically tailored from onboarding preferences (comfortEnvironment, dailyTime, helpGoals) & somatic cues
-  const goals = onboarding.preferences?.helpGoals ?? []
-  const latestCues = latest?.tags ?? []
   const suggestion = useMemo(() => {
+    const goals = onboarding.preferences?.helpGoals ?? []
+    const latestCues = latest?.tags ?? []
     const hasChestOrBreathCue = latestCues.some(t =>
       ['Tight chest', 'Restless', 'Shallow breath'].includes(t)
     )
@@ -177,7 +177,7 @@ function HomeContent() {
       icon: CloudRain,
       badge: `${dailyTime} · ${comfortEnv}`,
     }
-  }, [latestCues, bioRhythm.sleepQuality, bioRhythm.sleepHours, dailyTime, comfortEnv, goals])
+  }, [latest, onboarding.preferences, bioRhythm.sleepQuality, bioRhythm.sleepHours, dailyTime, comfortEnv])
 
   const SuggestionIcon = suggestion.icon
   const completedDays = journeyCompletedDays.length

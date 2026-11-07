@@ -291,6 +291,7 @@ export interface SanctuaryContextValue {
   reactToCheckIn: (checkInId: number, reaction: string) => Promise<void>
   sealLetter: (text: string, daysToWait?: number, unlockCondition?: string) => Promise<void>
   addStarJarNote: (text: string) => Promise<void>
+  removeStarJarNote: (idOrIndex: string | number) => Promise<void>
   sendCompanionThought: (
     text: string,
     modeOverride?: string,
@@ -320,6 +321,10 @@ export interface SanctuaryContextValue {
 
 const SanctuaryContext = createContext<SanctuaryContextValue | null>(null)
 
+// Module-level guards so React StrictMode double-mounts or Fast Refresh never re-trigger GET /api/companion
+let moduleAiChecked = false
+let moduleGeminiConfigured = false
+
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -331,10 +336,14 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const [sealedLetters, setSealedLetters] = useState<SealedLetter[]>([])
   const [crisisAlert, setCrisisAlert] = useState(false)
 
-  const [aiStatus, setAiStatus] = useState<AiConnectionStatus>('local')
+  const [aiStatus, setAiStatus] = useState<AiConnectionStatus>(() =>
+    moduleGeminiConfigured ? 'gemini' : 'local'
+  )
   const [aiThinking, setAiThinking] = useState(false)
   const [insightGenerating, setInsightGenerating] = useState(false)
-  const geminiConfiguredRef = useRef(false)
+  const geminiConfiguredRef = useRef(moduleGeminiConfigured)
+  const didCheckAiRef = useRef(false)
+  const didHydrateRef = useRef(false)
 
   const [rainPlaying, setRainPlaying] = useState(false)
   const [rainSeconds, setRainSeconds] = useState(0)
@@ -400,14 +409,40 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [applyProfile]
   )
 
-  // ---- Check Gemini Backend Status & Network Connectivity ----------------
+  // ---- Check Gemini Backend Status & Network Connectivity (ONCE on mount) --
   useEffect(() => {
+    if (didCheckAiRef.current) return
+    didCheckAiRef.current = true
+
     let cancelled = false
-    async function checkAiBackend() {
+    async function checkAiBackend(force = false) {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         if (!cancelled) setAiStatus('offline')
         return
       }
+      if (!force && moduleAiChecked) {
+        if (!cancelled) {
+          setAiStatus(moduleGeminiConfigured ? 'gemini' : 'local')
+        }
+        return
+      }
+      // Also check sessionStorage cache so page reloads in dev never spam GET /api/companion
+      if (!force && typeof window !== 'undefined') {
+        try {
+          const cached = window.sessionStorage.getItem('lumina_ai_configured')
+          if (cached === 'true' || cached === 'false') {
+            const configured = cached === 'true'
+            moduleAiChecked = true
+            moduleGeminiConfigured = configured
+            geminiConfiguredRef.current = configured
+            if (!cancelled) setAiStatus(configured ? 'gemini' : 'local')
+            return
+          }
+        } catch {
+          // ignore storage errors
+        }
+      }
+      moduleAiChecked = true
       try {
         const res = await fetch('/api/companion', { method: 'GET' })
         if (!res.ok) {
@@ -416,7 +451,15 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         }
         const data = (await res.json()) as { configured?: boolean }
         const configured = Boolean(data.configured)
+        moduleGeminiConfigured = configured
         geminiConfiguredRef.current = configured
+        if (typeof window !== 'undefined') {
+          try {
+            window.sessionStorage.setItem('lumina_ai_configured', String(configured))
+          } catch {
+            // ignore
+          }
+        }
         if (!cancelled) {
           setAiStatus(configured ? 'gemini' : 'local')
         }
@@ -428,11 +471,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-    void checkAiBackend()
+    void checkAiBackend(false)
 
     const handleOnline = () => {
       setAiStatus(geminiConfiguredRef.current ? 'gemini' : 'local')
-      void checkAiBackend()
     }
     const handleOffline = () => {
       setAiStatus('offline')
@@ -446,8 +488,11 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // ---- Hydration ---------------------------------------------------------
+  // ---- Hydration (strictly ONCE on mount) --------------------------------
   useEffect(() => {
+    if (didHydrateRef.current) return
+    didHydrateRef.current = true
+
     let cancelled = false
     async function hydrate() {
       // Never let a blocked/slow IndexedDB leave routes stuck on a loader.
@@ -472,7 +517,8 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [adoptStored])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Reflect sensory/theme preferences on <html> for global styling hooks.
   useEffect(() => {
@@ -681,6 +727,17 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         { id: newId('star'), text: trimmed, createdAt: Date.now() },
         ...(profileRef.current.starJar ?? []),
       ]
+      await update({ starJar: next })
+    },
+    [update]
+  )
+
+  const removeStarJarNote = useCallback(
+    async (idOrIndex: string | number) => {
+      const current = profileRef.current.starJar ?? []
+      const next = current.filter((note, idx) =>
+        typeof idOrIndex === 'number' ? idx !== idOrIndex : note.id !== idOrIndex
+      )
       await update({ starJar: next })
     },
     [update]
@@ -1115,6 +1172,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     reactToCheckIn,
     sealLetter,
     addStarJarNote,
+    removeStarJarNote,
     sendCompanionThought,
     reactToCompanionMessage,
     generateSanctuaryReflection,
