@@ -23,6 +23,7 @@ import {
   saveSealedLetter,
   signInLocalUser,
   signOutLocalUser,
+  updateCheckInReaction,
   type AuthUser,
   type BioRhythmState,
   type CheckInRecord,
@@ -40,6 +41,7 @@ export type Orb = { x: number; y: number }
 export type SensoryMode = 'full' | 'gentle' | 'low'
 export type ThemeMode = 'night' | 'dawn'
 export type MemoryCategory = SemanticMemory['category']
+export type AiConnectionStatus = 'gemini' | 'local' | 'offline'
 
 export interface Aura {
   label: string
@@ -49,26 +51,14 @@ export interface Aura {
 
 export const DEFAULT_ORB: Orb = { x: 50, y: 52 }
 
-export const DEFAULT_MEMORIES: SemanticMemory[] = [
-  {
-    id: 'mem-1',
-    text: 'Step back and soften the pace when late-night study or work spirals build up.',
-    createdAt: 1730000000000,
-    category: 'anchor',
-  },
-  {
-    id: 'mem-2',
-    text: 'Prefers being met with quiet presence before problem-solving.',
-    createdAt: 1730000000000,
-    category: 'preference',
-  },
-]
+// Honest empty default: no pre-seeded OCT 27 memories so every memory in the vault is 100% user-created.
+export const DEFAULT_MEMORIES: SemanticMemory[] = []
 
 export const DEFAULT_BIO_RHYTHM: BioRhythmState = {
   sleepHours: 7,
   sleepQuality: 'rested',
   rhythmNote: 'Steady baseline rest',
-  updatedAt: 1730000000000,
+  updatedAt: Date.now(),
 }
 
 const DEFAULT_ONBOARDING: OnboardingStatus = {
@@ -77,27 +67,53 @@ const DEFAULT_ONBOARDING: OnboardingStatus = {
   tutorialCompleted: false,
 }
 
+// Multi-tier on-device crisis & acute distress detection (explicit phrases + regex patterns)
 const CRISIS_PHRASES = [
   'end my life',
+  'ending my life',
   'kill myself',
+  'killing myself',
   'suicide',
   'suicidal',
   'want to die',
   'wanna die',
+  'wish i was dead',
+  'wish i were dead',
   'hurt myself',
+  'hurting myself',
   'harm myself',
+  'harming myself',
   "can't go on living",
   'cannot go on living',
   'self harm',
   'self-harm',
+  'cut myself',
+  'cutting myself',
+  'overdose',
+  'take my own life',
   'better off dead',
+  'better off without me',
   'no reason to live',
+  'no point in living',
+  'want it all to end',
+  'end it all tonight',
+  'not wake up tomorrow',
+  'disappear forever',
+  'goodbye forever',
+]
+
+const CRISIS_PATTERNS: RegExp[] = [
+  /\b(want|going|plan|planning|ready|trying)\s+to\s+(die|end\s+it|kill\s+myself|hurt\s+myself|harm\s+myself)\b/i,
+  /\b(don'?t|do\s+not)\s+want\s+to\s+(be\s+alive|live\s+anymore|exist\s+anymore|wake\s+up)\b/i,
+  /\b(everyone|world)\s+would\s+be\s+better\s+off\s+without\s+me\b/i,
+  /\b(can'?t|cannot)\s+(keep\s+living|do\s+this\s+life\s+anymore|stay\s+alive)\b/i,
 ]
 
 export function containsCrisisSignal(text: string): boolean {
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
   if (!normalized) return false
-  return CRISIS_PHRASES.some(phrase => normalized.includes(phrase))
+  if (CRISIS_PHRASES.some(phrase => normalized.includes(phrase))) return true
+  return CRISIS_PATTERNS.some(pattern => pattern.test(normalized))
 }
 
 export function deriveAura(orb: Orb): Aura {
@@ -131,6 +147,7 @@ const INITIAL_PROFILE: ProfileData = {
   lastOrb: DEFAULT_ORB,
   preferredCompanion: 'The Listener',
   memories: DEFAULT_MEMORIES,
+  aiMemoryEnabled: true,
   bioRhythm: DEFAULT_BIO_RHYTHM,
   authUser: null,
   onboarding: DEFAULT_ONBOARDING,
@@ -202,10 +219,22 @@ function startRainEngine(): AudioEngine | null {
   return { ctx, nodes, noise: rainSource, gain: masterGain }
 }
 
+export interface CheckInEmotionPayload {
+  emotionId: string
+  emoji: string
+  emotionLabel: string
+  intensity: number
+}
+
 export interface SanctuaryContextValue {
   // lifecycle
   isHydrated: boolean
   isLoading: boolean
+
+  // AI & network status
+  aiStatus: AiConnectionStatus
+  aiThinking: boolean
+  aiMemoryEnabled: boolean
 
   // persisted state
   authUser: AuthUser | null
@@ -250,7 +279,13 @@ export interface SanctuaryContextValue {
   // sanctuary actions
   setOrb: (pos: Orb) => void
   setCompanion: (companion: string) => void
-  plantCheckIn: (tags: string[], note?: string) => Promise<void>
+  plantCheckIn: (
+    tags: string[],
+    note?: string,
+    emotion?: CheckInEmotionPayload,
+    reaction?: string
+  ) => Promise<void>
+  reactToCheckIn: (checkInId: number, reaction: string) => Promise<void>
   sealLetter: (text: string, daysToWait?: number, unlockCondition?: string) => Promise<void>
   addStarJarNote: (text: string) => Promise<void>
   sendCompanionThought: (
@@ -258,7 +293,11 @@ export interface SanctuaryContextValue {
     modeOverride?: string,
     extra?: { tags?: string[] }
   ) => Promise<string>
+  reactToCompanionMessage: (messageId: string, reaction: string) => Promise<void>
   addMemory: (text: string, category: MemoryCategory) => Promise<void>
+  editMemory: (id: string, text: string, category: MemoryCategory) => Promise<void>
+  toggleMemoryShare: (id: string) => Promise<void>
+  setAiMemoryEnabled: (enabled: boolean) => Promise<void>
   removeMemory: (id: string) => Promise<void>
   updateBioRhythm: (bio: BioRhythmState) => Promise<void>
   toggleJourneyDay: (day: number) => Promise<void>
@@ -286,6 +325,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
   const [sealedLetters, setSealedLetters] = useState<SealedLetter[]>([])
   const [crisisAlert, setCrisisAlert] = useState(false)
+
+  const [aiStatus, setAiStatus] = useState<AiConnectionStatus>('local')
+  const [aiThinking, setAiThinking] = useState(false)
+  const geminiConfiguredRef = useRef(false)
 
   const [rainPlaying, setRainPlaying] = useState(false)
   const [rainSeconds, setRainSeconds] = useState(0)
@@ -325,10 +368,18 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       if (!stored) return
       const { key: _key, ...rest } = stored
       void _key
+      // Strip any legacy hardcoded OCT 27 (1730000000000) seed memories so the Memory Vault is 100% authentic.
+      const cleanedMemories = (rest.memories ?? DEFAULT_MEMORIES).filter(
+        m => m.createdAt !== 1730000000000 && m.id !== 'mem-1' && m.id !== 'mem-2'
+      )
       applyProfile({
         ...INITIAL_PROFILE,
         ...rest,
-        memories: rest.memories ?? DEFAULT_MEMORIES,
+        memories: cleanedMemories.map(m => ({
+          ...m,
+          sharedWithAi: m.sharedWithAi ?? true,
+        })),
+        aiMemoryEnabled: rest.aiMemoryEnabled ?? true,
         bioRhythm: rest.bioRhythm ?? DEFAULT_BIO_RHYTHM,
         onboarding: rest.onboarding ?? DEFAULT_ONBOARDING,
         companionHistory: rest.companionHistory ?? [],
@@ -342,6 +393,52 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     },
     [applyProfile]
   )
+
+  // ---- Check Gemini Backend Status & Network Connectivity ----------------
+  useEffect(() => {
+    let cancelled = false
+    async function checkAiBackend() {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (!cancelled) setAiStatus('offline')
+        return
+      }
+      try {
+        const res = await fetch('/api/companion', { method: 'GET' })
+        if (!res.ok) {
+          if (!cancelled) setAiStatus('local')
+          return
+        }
+        const data = (await res.json()) as { configured?: boolean }
+        const configured = Boolean(data.configured)
+        geminiConfiguredRef.current = configured
+        if (!cancelled) {
+          setAiStatus(configured ? 'gemini' : 'local')
+        }
+      } catch {
+        if (!cancelled) {
+          setAiStatus(
+            typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'local'
+          )
+        }
+      }
+    }
+    void checkAiBackend()
+
+    const handleOnline = () => {
+      setAiStatus(geminiConfiguredRef.current ? 'gemini' : 'local')
+      void checkAiBackend()
+    }
+    const handleOffline = () => {
+      setAiStatus('offline')
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      cancelled = true
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   // ---- Hydration ---------------------------------------------------------
   useEffect(() => {
@@ -507,7 +604,12 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   )
 
   const plantCheckIn = useCallback(
-    async (tags: string[], note?: string) => {
+    async (
+      tags: string[],
+      note?: string,
+      emotion?: CheckInEmotionPayload,
+      reaction?: string
+    ) => {
       const current = profileRef.current
       const orb = current.lastOrb ?? DEFAULT_ORB
       const nextBlooms = current.gardenBlooms + 1
@@ -519,6 +621,15 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         auraLabel: deriveAura(orb).label,
         tags: [...tags],
         ...(trimmed ? { note: trimmed } : {}),
+        ...(emotion
+          ? {
+              emotionId: emotion.emotionId,
+              emoji: emotion.emoji,
+              emotionLabel: emotion.emotionLabel,
+              intensity: emotion.intensity,
+            }
+          : {}),
+        ...(reaction ? { reaction } : {}),
       })
       if (updated.length) {
         checkInsRef.current = updated
@@ -527,6 +638,18 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     },
     [update]
   )
+
+  const reactToCheckIn = useCallback(async (checkInId: number, reaction: string) => {
+    const updated = await updateCheckInReaction(checkInId, reaction)
+    if (updated.length) {
+      checkInsRef.current = updated
+      setCheckIns(updated)
+    } else {
+      setCheckIns(prev =>
+        prev.map(c => (c.id === checkInId ? { ...c, reaction } : c))
+      )
+    }
+  }, [])
 
   const sealLetter = useCallback(
     async (text: string, daysToWait = 1, unlockCondition?: string) => {
@@ -562,10 +685,45 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       const trimmed = text.trim()
       if (!trimmed) return
       const next: SemanticMemory[] = [
-        { id: newId('mem'), text: trimmed, createdAt: Date.now(), category },
+        {
+          id: newId('mem'),
+          text: trimmed,
+          createdAt: Date.now(),
+          category,
+          sharedWithAi: true,
+        },
         ...(profileRef.current.memories ?? []),
       ]
       await update({ memories: next })
+    },
+    [update]
+  )
+
+  const editMemory = useCallback(
+    async (id: string, text: string, category: MemoryCategory) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      const next = (profileRef.current.memories ?? []).map(m =>
+        m.id === id ? { ...m, text: trimmed, category, updatedAt: Date.now() } : m
+      )
+      await update({ memories: next })
+    },
+    [update]
+  )
+
+  const toggleMemoryShare = useCallback(
+    async (id: string) => {
+      const next = (profileRef.current.memories ?? []).map(m =>
+        m.id === id ? { ...m, sharedWithAi: m.sharedWithAi === false ? true : false } : m
+      )
+      await update({ memories: next })
+    },
+    [update]
+  )
+
+  const setAiMemoryEnabled = useCallback(
+    async (enabled: boolean) => {
+      await update({ aiMemoryEnabled: enabled })
     },
     [update]
   )
@@ -575,6 +733,18 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       await update({
         memories: (profileRef.current.memories ?? []).filter(m => m.id !== id),
       })
+    },
+    [update]
+  )
+
+  const reactToCompanionMessage = useCallback(
+    async (messageId: string, reaction: string) => {
+      const next = (profileRef.current.companionHistory ?? []).map(m =>
+        m.id === messageId
+          ? { ...m, reaction: m.reaction === reaction ? undefined : reaction }
+          : m
+      )
+      await update({ companionHistory: next })
     },
     [update]
   )
@@ -626,6 +796,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       const aura = deriveAura(current.lastOrb ?? DEFAULT_ORB)
       const bio = current.bioRhythm ?? DEFAULT_BIO_RHYTHM
       const memories = current.memories ?? []
+      const aiMemoryEnabled = current.aiMemoryEnabled ?? true
+      const sharedMemories = aiMemoryEnabled
+        ? memories.filter(m => m.sharedWithAi !== false)
+        : []
 
       const now = Date.now()
       const userMessage: CompanionMessage = {
@@ -636,30 +810,94 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         timestamp: now,
       }
 
-      let replyText: string
+      // Immediately append user message so UI feels responsive
+      const historyWithUser = [...(current.companionHistory ?? []), userMessage].slice(-200)
+      await update({ companionHistory: historyWithUser })
+
+      let replyText = ''
+      let providerUsed: 'gemini' | 'local' = 'local'
+
       if (containsCrisisSignal(raw)) {
         // On-device crisis guardrail always takes priority over any persona reply.
         replyText = `${firstName}, what you're carrying sounds deeply overwhelming, and your life matters. I am an AI sanctuary, not a crisis professional—please let a real human support you right now.`
         setCrisisAlert(true)
       } else {
-        const snippet = raw.length > 68 ? `${raw.slice(0, 68)}…` : raw
+        setAiThinking(true)
         const tags = extra?.tags ?? []
-        const activeTagsText = tags.length > 0 ? ` while holding ${tags.join(' and ').toLowerCase()}` : ''
-        const restContext =
-          bio.sleepQuality === 'exhausted'
-            ? `Because you're running on ${bio.sleepHours}h of exhausted rest, everything feels heavier right now.`
-            : bio.sleepQuality === 'fragmented'
-              ? `After ${bio.sleepHours}h of fragmented rest, your nervous system deserves extra gentleness.`
-              : `With your aura ${aura.label.toLowerCase()}, let's honor your pace.`
-        const anchorMemory = memories[0]?.text ? ` Remembering your note: “${memories[0].text}”` : ''
+        const latestCheckIn = checkInsRef.current[0]
 
-        const responses: Record<string, string> = {
-          'The Listener': `I hear you, ${firstName}—especially around “${snippet}”${activeTagsText}. ${restContext} You don't need to shrink or solve this right now.${anchorMemory}`,
-          'The Grounder': `Thank you for naming “${snippet}”, ${firstName}. Since you're arriving ${aura.label.toLowerCase()}${activeTagsText}, let's unclench your jaw, drop your shoulders, and take one slow breath.${anchorMemory}`,
-          'The Guide': `Holding “${snippet}”${activeTagsText} takes real energy, ${firstName}. ${restContext} What is one smaller, kinder expectation you can set for the next hour?${anchorMemory}`,
-          'Boundary Coach': `For “${snippet}”, here is a gentle boundary you can use today, ${firstName}: “I care about doing this well, and right now I need to step back and rest so I can return with a clear head.”${anchorMemory}`,
+        // Attempt real server-side Gemini 2.5 Flash call if online
+        if (typeof navigator === 'undefined' || navigator.onLine) {
+          try {
+            const res = await fetch('/api/companion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                mode: 'chat',
+                message: raw,
+                persona: companionMode,
+                userName: firstName,
+                pronouns: current.pronouns,
+                auraLabel: aura.label,
+                emotionEmoji: latestCheckIn?.emoji,
+                emotionLabel: latestCheckIn?.emotionLabel,
+                emotionIntensity: latestCheckIn?.intensity,
+                tags,
+                bioRhythm: bio,
+                aiMemoryEnabled,
+                memories: sharedMemories,
+                history: (current.companionHistory ?? []).slice(-6),
+              }),
+            })
+            if (res.ok) {
+              const data = (await res.json()) as {
+                configured?: boolean
+                provider?: 'gemini' | 'local'
+                reply?: string | null
+              }
+              geminiConfiguredRef.current = Boolean(data.configured)
+              if (data.reply && data.provider === 'gemini') {
+                replyText = data.reply
+                providerUsed = 'gemini'
+                setAiStatus('gemini')
+              } else {
+                setAiStatus('local')
+              }
+            }
+          } catch {
+            setAiStatus(
+              typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'local'
+            )
+          }
+        } else {
+          setAiStatus('offline')
         }
-        replyText = responses[companionMode] ?? responses['The Listener']
+
+        // Transparent Local Mode fallback if Gemini is unconfigured or offline
+        if (!replyText) {
+          const snippet = raw.length > 68 ? `${raw.slice(0, 68)}…` : raw
+          const activeTagsText =
+            tags.length > 0 ? ` while holding ${tags.join(' and ').toLowerCase()}` : ''
+          const restContext =
+            bio.sleepQuality === 'exhausted'
+              ? `Because you're running on ${bio.sleepHours}h of exhausted rest, everything feels heavier right now.`
+              : bio.sleepQuality === 'fragmented'
+                ? `After ${bio.sleepHours}h of fragmented rest, your nervous system deserves extra gentleness.`
+                : `With your aura ${aura.label.toLowerCase()}, let's honor your pace.`
+          const anchorMemory = sharedMemories[0]?.text
+            ? ` Remembering your note: “${sharedMemories[0].text}”`
+            : ''
+
+          const responses: Record<string, string> = {
+            'The Listener': `I hear you, ${firstName}—especially around “${snippet}”${activeTagsText}. ${restContext} You don't need to shrink or solve this right now.${anchorMemory}`,
+            'The Grounder': `Thank you for naming “${snippet}”, ${firstName}. Since you're arriving ${aura.label.toLowerCase()}${activeTagsText}, let's unclench your jaw, drop your shoulders, and take one slow breath.${anchorMemory}`,
+            'The Guide': `Holding “${snippet}”${activeTagsText} takes real energy, ${firstName}. ${restContext} What is one smaller, kinder expectation you can set for the next hour?${anchorMemory}`,
+            'Boundary Coach': `For “${snippet}”, here is a gentle boundary you can use today, ${firstName}: “I care about doing this well, and right now I need to step back and rest so I can return with a clear head.”${anchorMemory}`,
+          }
+          replyText = responses[companionMode] ?? responses['The Listener']
+          providerUsed = 'local'
+        }
+        setAiThinking(false)
       }
 
       const companionMessage: CompanionMessage = {
@@ -667,10 +905,13 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         role: 'companion',
         mode: companionMode,
         text: replyText,
-        timestamp: now + 1,
+        timestamp: Date.now(),
+        provider: providerUsed,
       }
-      const history = [...(current.companionHistory ?? []), userMessage, companionMessage].slice(-200)
-      await update({ companionHistory: history })
+      const finalHistory = [...(profileRef.current.companionHistory ?? []), companionMessage].slice(
+        -200
+      )
+      await update({ companionHistory: finalHistory })
       return replyText
     },
     [update]
@@ -698,6 +939,9 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const value: SanctuaryContextValue = {
     isHydrated,
     isLoading: !isHydrated,
+    aiStatus,
+    aiThinking,
+    aiMemoryEnabled: profile.aiMemoryEnabled ?? true,
     authUser: profile.authUser ?? null,
     onboarding: profile.onboarding ?? DEFAULT_ONBOARDING,
     name: profile.name,
@@ -731,10 +975,15 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     setOrb,
     setCompanion,
     plantCheckIn,
+    reactToCheckIn,
     sealLetter,
     addStarJarNote,
     sendCompanionThought,
+    reactToCompanionMessage,
     addMemory,
+    editMemory,
+    toggleMemoryShare,
+    setAiMemoryEnabled,
     removeMemory,
     updateBioRhythm,
     toggleJourneyDay,

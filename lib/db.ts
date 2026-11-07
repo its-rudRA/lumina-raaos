@@ -1,3 +1,27 @@
+export interface EmotionOption {
+  id: string
+  emoji: string
+  label: string
+  color: string
+  pleasantness: number
+  energy: number
+}
+
+export const EMOTION_OPTIONS: EmotionOption[] = [
+  { id: 'peaceful', emoji: '🌸', label: 'Peaceful', color: '#e8a4b8', pleasantness: 0.72, energy: 0.38 },
+  { id: 'sad', emoji: '🌧️', label: 'Sad', color: '#7ea8c8', pleasantness: 0.25, energy: 0.28 },
+  { id: 'exhausted', emoji: '🌙', label: 'Exhausted', color: '#9d8ec4', pleasantness: 0.30, energy: 0.15 },
+  { id: 'overwhelmed', emoji: '🫧', label: 'Overwhelmed', color: '#b8a4e8', pleasantness: 0.22, energy: 0.78 },
+  { id: 'loved', emoji: '💗', label: 'Loved', color: '#f0a8b8', pleasantness: 0.85, energy: 0.55 },
+  { id: 'hopeful', emoji: '✨', label: 'Hopeful', color: '#f3d9a4', pleasantness: 0.80, energy: 0.68 },
+  { id: 'grounded', emoji: '🌿', label: 'Grounded', color: '#7ec8b8', pleasantness: 0.70, energy: 0.45 },
+  { id: 'frustrated', emoji: '🔥', label: 'Frustrated', color: '#e08a7e', pleasantness: 0.20, energy: 0.85 },
+  { id: 'anxious', emoji: '🦋', label: 'Anxious', color: '#c8a4e8', pleasantness: 0.28, energy: 0.82 },
+  { id: 'numb', emoji: '☁️', label: 'Numb', color: '#8fa0b5', pleasantness: 0.38, energy: 0.20 },
+  { id: 'grateful', emoji: '🌷', label: 'Grateful', color: '#e8b89d', pleasantness: 0.82, energy: 0.50 },
+  { id: 'restless', emoji: '🌊', label: 'Restless', color: '#7eb8c8', pleasantness: 0.35, energy: 0.74 },
+]
+
 export interface CheckInRecord {
   id?: number
   timestamp: number
@@ -5,6 +29,11 @@ export interface CheckInRecord {
   auraLabel: string
   tags: string[]
   note?: string
+  emotionId?: string
+  emoji?: string
+  emotionLabel?: string
+  intensity?: number
+  reaction?: string
 }
 
 export interface SealedLetter {
@@ -19,7 +48,9 @@ export interface SemanticMemory {
   id: string
   text: string
   createdAt: number
-  category: 'anchor' | 'trigger' | 'preference'
+  category: 'anchor' | 'trigger' | 'preference' | 'context' | 'coping' | 'reflection' | 'boundary'
+  sharedWithAi?: boolean
+  updatedAt?: number
 }
 
 export interface BioRhythmState {
@@ -61,6 +92,8 @@ export interface CompanionMessage {
   mode: string
   text: string
   timestamp: number
+  provider?: 'gemini' | 'local' | 'guided-bot'
+  reaction?: string
 }
 
 export interface StarJarNote {
@@ -77,6 +110,7 @@ export interface SanctuaryState {
   lastOrb: { x: number; y: number }
   preferredCompanion: string
   memories?: SemanticMemory[]
+  aiMemoryEnabled?: boolean
   bioRhythm?: BioRhythmState
   authUser?: AuthUser | null
   onboarding?: OnboardingStatus
@@ -93,6 +127,8 @@ const DEFAULT_PROFILE: Omit<SanctuaryState, 'key'> = {
   gardenBlooms: 3,
   lastOrb: { x: 50, y: 52 },
   preferredCompanion: 'The Listener',
+  memories: [],
+  aiMemoryEnabled: true,
 }
 
 const DB_NAME = 'lumina_sanctuary_db'
@@ -345,6 +381,31 @@ export async function addCheckIn(record: Omit<CheckInRecord, 'id'>): Promise<Che
     await new Promise<void>((resolve) => {
       const tx = db.transaction('checkins', 'readwrite')
       tx.objectStore('checkins').add(record)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+    })
+    return getCheckIns()
+  } catch {
+    return []
+  }
+}
+
+export async function updateCheckInReaction(
+  checkInId: number,
+  reaction: string
+): Promise<CheckInRecord[]> {
+  try {
+    const db = await openDB()
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('checkins', 'readwrite')
+      const store = tx.objectStore('checkins')
+      const getReq = store.get(checkInId)
+      getReq.onsuccess = () => {
+        const existing = getReq.result as CheckInRecord | undefined
+        if (existing) {
+          store.put({ ...existing, reaction })
+        }
+      }
       tx.oncomplete = () => resolve()
       tx.onerror = () => resolve()
     })
