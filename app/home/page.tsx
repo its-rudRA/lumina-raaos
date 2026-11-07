@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowRight,
@@ -14,11 +14,13 @@ import {
   Pause,
   Play,
   Route,
+  Send,
   Sparkles,
   Star,
   Wind,
 } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
+import { SomaticPulseScan } from '@/components/somatic-pulse-scan'
 import { useSanctuary } from '@/context/sanctuary-context'
 import { auraColor, formatClock, glass, timeAgo } from '@/lib/format'
 
@@ -45,7 +47,10 @@ function HomeContent() {
     rainPlaying,
     rainSeconds,
     toggleRain,
+    sendCompanionThought,
   } = useSanctuary()
+  const [quickPrompt, setQuickPrompt] = useState('')
+  const [sendingPrompt, setSendingPrompt] = useState(false)
 
   const firstName = name.trim().split(/\s+/)[0] || 'friend'
   const latest = checkIns[0]
@@ -163,6 +168,9 @@ function HomeContent() {
           </span>
         </div>
       </section>
+
+      {/* LIVE SOMATIC PULSE & RESONANCE TELEMETRY SUITE */}
+      <SomaticPulseScan />
 
       {/* 2. PRIMARY GATEWAY ROW: TODAY'S CHECK-IN STATUS + LIVING INNER GARDEN GATEWAY */}
       <section className="grid gap-5 lg:grid-cols-12">
@@ -331,13 +339,42 @@ function HomeContent() {
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-xs text-white/45">
-              4 personas · Voice venting · User-approved Memory Vault
-            </span>
-            <Link href="/companion" className="primary-button px-5 py-2.5 text-xs">
-              Open Soul Companion <ArrowRight size={13} />
-            </Link>
+          <div className="mt-4 space-y-3">
+            <form
+              onSubmit={async e => {
+                e.preventDefault()
+                if (!quickPrompt.trim() || sendingPrompt) return
+                setSendingPrompt(true)
+                const msg = quickPrompt
+                setQuickPrompt('')
+                await sendCompanionThought(msg, companion)
+                setSendingPrompt(false)
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                value={quickPrompt}
+                onChange={e => setQuickPrompt(e.target.value)}
+                placeholder="Ask your Soul Companion anything..."
+                aria-label="Quick message to Soul Companion"
+                className="companion-input !py-2.5 !text-xs"
+              />
+              <button
+                type="submit"
+                disabled={!quickPrompt.trim() || sendingPrompt}
+                className="secondary-button shrink-0 !px-3.5 !py-2.5 !text-xs"
+              >
+                <Send size={13} />
+              </button>
+            </form>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-white/45">
+                4 personas · Voice venting · User-approved Memory Vault
+              </span>
+              <Link href="/companion" className="primary-button px-5 py-2.5 text-xs">
+                Open Soul Companion <ArrowRight size={13} />
+              </Link>
+            </div>
           </div>
         </div>
 

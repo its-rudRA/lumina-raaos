@@ -146,8 +146,8 @@ export function AppShell({
 
       {/* DESKTOP SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.07] bg-[#0a0c14]/80 backdrop-blur-2xl transition-[width] duration-300 lg:flex ${
-          collapsed ? 'w-[76px]' : 'w-68'
+        className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.07] bg-[#0a0c14]/85 pt-2 backdrop-blur-2xl transition-[width] duration-300 lg:flex ${
+          collapsed ? 'w-[76px]' : 'w-[272px]'
         }`}
         aria-label="Sanctuary navigation"
       >
@@ -264,20 +264,26 @@ export function AppShell({
       </aside>
 
       {/* MAIN COLUMN */}
-      <div className={`relative z-10 transition-[padding] duration-300 ${collapsed ? 'lg:pl-[76px]' : 'lg:pl-68'}`}>
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-8">
+      <div
+        className={`relative z-10 min-h-screen transition-[padding] duration-300 ${
+          collapsed ? 'lg:pl-[76px]' : 'lg:pl-[272px]'
+        }`}
+      >
+        <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-[#080b11]/80 px-4 pb-4 pt-6 backdrop-blur-xl sm:px-8 sm:pb-5 sm:pt-7">
           <div className="min-w-0">
             {title ? (
               <>
-                <h1 className="font-serif text-xl text-white">{title}</h1>
-                {subtitle && <p className="text-xs text-white/45">{subtitle}</p>}
+                <h1 className="font-serif text-xl leading-snug text-white sm:text-2xl">{title}</h1>
+                {subtitle && <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>}
               </>
             ) : (
-              <p className="hidden font-serif text-sm italic text-white/45 sm:block">
+              <p className="hidden font-serif text-sm italic text-white/50 sm:block">
                 You don&apos;t have to be happy to be worthy of peace.
               </p>
             )}
-            <span className="font-serif text-lg tracking-[0.2em] text-white lg:hidden">{!title && 'LUMINA'}</span>
+            <span className="font-serif text-lg tracking-[0.2em] text-white lg:hidden">
+              {!title && 'LUMINA'}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="mode-toggle" role="group" aria-label="Sensory setting">
@@ -303,7 +309,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="px-4 pb-28 pt-5 sm:px-8 lg:pb-12">{children}</main>
+        <main className="px-4 pb-28 pt-6 sm:px-8 sm:pt-7 lg:pb-14">{children}</main>
       </div>
 
       {/* MOBILE BOTTOM NAV */}

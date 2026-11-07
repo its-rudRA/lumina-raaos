@@ -34,3 +34,6 @@
 @keyframes luminaWave{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
 @keyframes mistRise{0%{transform:translateY(20px) scale(.6);opacity:0}30%{opacity:.7}100%{transform:translateY(-110px) scale(1.8);opacity:0}}
 @media (prefers-reduced-motion:reduce){[style*="luminaWave"],[style*="mistRise"]{animation:none!important}}
+
+@keyframes somaticScanLine{0%{top:8%;opacity:.35}50%{top:88%;opacity:.95}100%{top:8%;opacity:.35}}
+@keyframes somaticNodePulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.28);opacity:1}}
