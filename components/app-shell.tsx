@@ -101,13 +101,12 @@ export function AppShell({
   const [breathOpen, setBreathOpen] = useState(false)
 
   const ready = isHydrated && !isLoading
-  const destination = ready ? resolveEntryRoute(authUser, onboarding) : null
 
-  // Auth + onboarding guard (never redirects while data is still hydrating).
+  // Auth guard (never redirects while data is still hydrating).
   useEffect(() => {
-    if (!destination) return
-    if (destination !== '/home') router.replace(destination)
-  }, [destination, router])
+    if (!ready) return
+    if (!authUser) router.replace('/welcome')
+  }, [ready, authUser, router])
 
   // Any on-device crisis detection opens the support modal automatically.
   useEffect(() => {
@@ -119,7 +118,7 @@ export function AppShell({
     setMoreOpen(false)
   }, [pathname])
 
-  if (!ready || destination !== '/home') {
+  if (!ready || !authUser) {
     return <LuminaLoader />
   }
 
