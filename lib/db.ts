@@ -102,6 +102,20 @@ export interface StarJarNote {
   createdAt: number
 }
 
+export interface SanctuaryReflection {
+  generatedAt: number
+  provider: 'gemini' | 'local'
+  narrative: string
+  emotionalPatterns: string[]
+  commonTriggers: string[]
+  calmingStrategies: string[]
+  sleepMoodObservation: string
+  positiveMoments: string[]
+  gentleSuggestions: string[]
+  weeklySummary: string
+  reaction?: string
+}
+
 export interface SanctuaryState {
   key: string
   name: string
@@ -119,6 +133,7 @@ export interface SanctuaryState {
   sensoryMode?: 'full' | 'gentle' | 'low'
   themeMode?: 'night' | 'dawn'
   starJar?: StarJarNote[]
+  insightReflection?: SanctuaryReflection | null
 }
 
 const DEFAULT_PROFILE: Omit<SanctuaryState, 'key'> = {

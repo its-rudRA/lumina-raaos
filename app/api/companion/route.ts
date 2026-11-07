@@ -104,13 +104,112 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // Helper to build a 100% honest Local Mode synthesis from the user's real check-ins
+  function buildLocalInsightsFallback(payload: Record<string, unknown>) {
+    const userName = sanitizeText(payload.userName, 60) || 'Friend'
+    const rawCheckIns = Array.isArray(payload.checkIns) ? payload.checkIns.slice(0, 30) : []
+    const total = rawCheckIns.length
+
+    const auraCounts: Record<string, number> = {}
+    const emotionCounts: Record<string, number> = {}
+    const tagCounts: Record<string, number> = {}
+
+    for (const item of rawCheckIns) {
+      if (!item || typeof item !== 'object') continue
+      const rec = item as Record<string, unknown>
+      const aura = sanitizeText(rec.auraLabel, 60) || 'Softly Grounded'
+      auraCounts[aura] = (auraCounts[aura] || 0) + 1
+      const emo = sanitizeText(rec.emotionLabel, 40)
+      const emoji = sanitizeText(rec.emoji, 8)
+      if (emo) {
+        const key = `${emoji ? `${emoji} ` : ''}${emo}`
+        emotionCounts[key] = (emotionCounts[key] || 0) + 1
+      }
+      if (Array.isArray(rec.tags)) {
+        for (const t of rec.tags) {
+          const cleanTag = sanitizeText(t, 40)
+          if (cleanTag) tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1
+        }
+      }
+    }
+
+    const topAuras = Object.entries(auraCounts).sort((a, b) => b[1] - a[1])
+    const topEmotions = Object.entries(emotionCounts).sort((a, b) => b[1] - a[1])
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1])
+
+    const bio =
+      payload.bioRhythm && typeof payload.bioRhythm === 'object'
+        ? (payload.bioRhythm as Record<string, unknown>)
+        : null
+    const sleepHours = Number(bio?.sleepHours) || 7
+    const sleepQuality = sanitizeText(bio?.sleepQuality, 30) || 'rested'
+
+    const prefs =
+      payload.preferences && typeof payload.preferences === 'object'
+        ? (payload.preferences as Record<string, unknown>)
+        : null
+    const comfortEnv = sanitizeText(prefs?.comfortEnvironment, 60) || 'Starry night'
+    const dailyTime = sanitizeText(prefs?.dailyTime, 40) || '5 minutes'
+
+    const starNotes = Array.isArray(payload.starJar)
+      ? payload.starJar
+          .slice(0, 3)
+          .map((s: unknown) =>
+            s && typeof s === 'object'
+              ? sanitizeText((s as Record<string, unknown>).text, 120)
+              : ''
+          )
+          .filter(Boolean)
+      : []
+
+    const primaryAura = topAuras[0]?.[0] || 'Softly Grounded'
+    const primaryAuraCount = topAuras[0]?.[1] || total
+
+    return {
+      narrative: `${userName}, across your ${total} recorded check-ins, you have most frequently arrived in a “${primaryAura}” state (${primaryAuraCount} of ${total} check-ins). Your logs reflect a thoughtful awareness of how your body and mind respond to daily pressures.`,
+      emotionalPatterns: [
+        `Most frequent aura: “${primaryAura}” (${primaryAuraCount} of ${total} check-ins).`,
+        ...(topEmotions.length > 0
+          ? [
+              `Most named emotion: ${topEmotions[0][0]} (${topEmotions[0][1]} time${topEmotions[0][1] === 1 ? '' : 's'}).`,
+            ]
+          : []),
+      ],
+      commonTriggers:
+        topTags.length > 0
+          ? topTags
+              .slice(0, 3)
+              .map(
+                ([tag, count]) =>
+                  `“${tag}” was noted in ${count} of your ${total} check-ins.`
+              )
+          : ['No recurring tension cues have dominated your check-ins yet.'],
+      calmingStrategies: [
+        `Your chosen sanctuary atmosphere (“${comfortEnv}”) pairs naturally with a gentle ${dailyTime} daily pause.`,
+        '4s inhale / 6s exhale breathing and the 174Hz + 261Hz acoustic rain soundscape remain available whenever mental load rises.',
+      ],
+      sleepMoodObservation: `You most recently logged ${sleepHours}h of ${sleepQuality} rest. In your personal check-ins, notice how ${sleepQuality} rest correlates with your emotional battery—this is an observed personal correlation rather than a medical cause.`,
+      positiveMoments:
+        starNotes.length > 0
+          ? starNotes.map(n => `Star Jar note: “${n}”`)
+          : [
+              `You have returned to your sanctuary for ${total} check-ins at your own pace without streak pressure.`,
+            ],
+      gentleSuggestions: [
+        `Set aside ${dailyTime} in your “${comfortEnv}” environment today to let your shoulders drop.`,
+        'If a looping thought appears tonight, try placing it in the Release Room or speaking with your Soul Companion.',
+      ],
+      weeklySummary: `Based on ${total} real local check-ins, your sanctuary rhythm centers around “${primaryAura}” with ${sleepHours}h (${sleepQuality}) of logged rest.`,
+    }
+  }
+
   // Transparent Local Mode fallback when GEMINI_API_KEY is not configured on the server
   if (!apiKey) {
     return NextResponse.json({
       configured: false,
       provider: 'local',
       reply: null,
-      insights: null,
+      insights: mode === 'insights' ? buildLocalInsightsFallback(body) : null,
     })
   }
 
@@ -146,6 +245,26 @@ export async function POST(req: NextRequest) {
         ? `${Number(bio.sleepHours) || 7}h (${sanitizeText(bio.sleepQuality, 30) || 'rested'})`
         : 'Not specified'
 
+      const prefs =
+        body.preferences && typeof body.preferences === 'object'
+          ? (body.preferences as Record<string, unknown>)
+          : null
+      const prefsSummary = prefs
+        ? `Comfort environment: ${sanitizeText(prefs.comfortEnvironment, 60) || 'Not set'}, Daily pace: ${sanitizeText(prefs.dailyTime, 40) || 'Flexible'}`
+        : 'Not specified'
+
+      const starNotes = Array.isArray(body.starJar)
+        ? body.starJar
+            .slice(0, 5)
+            .map((s: unknown) =>
+              s && typeof s === 'object'
+                ? sanitizeText((s as Record<string, unknown>).text, 120)
+                : ''
+            )
+            .filter(Boolean)
+            .join('; ')
+        : ''
+
       const aiMemoryEnabled = body.aiMemoryEnabled !== false
       const rawMemories =
         aiMemoryEnabled && Array.isArray(body.memories) ? body.memories.slice(0, 20) : []
@@ -160,26 +279,31 @@ export async function POST(req: NextRequest) {
         .join('\n')
 
       const systemPrompt = `You are LUMINA's Personal Emotional Reflection Engine.
-Analyze the user's real emotional check-ins, somatic tags, sleep state, and user-approved memories.
+Analyze the user's real emotional check-ins (${rawCheckIns.length} total), somatic tags, sleep state, Star Jar gratitude notes, and user-approved memories.
 Strict ethical & non-clinical rules:
 - NEVER make clinical or medical diagnoses.
-- NEVER invent statistics, percentages, or fake studies.
-- Strictly distinguish observed personal correlations from causes (use humble phrasing like "When X appears, you often note Y").
-- Return valid JSON matching the exact schema requested:
+- NEVER invent numbers, statistics, or percentages that are not directly present in the user's ${rawCheckIns.length} check-ins.
+- Explicitly note that sleep and mood connections are observed personal correlations rather than proven medical causes.
+- Return valid JSON matching this exact schema:
 {
-  "weatherSummary": "2-sentence warm synthesis of their recent emotional landscape",
-  "triggers": ["up to 3 gentle observations about recurring pressures or somatic cues"],
-  "calmingAnchors": ["up to 3 supportive anchors or calming preferences observed"],
-  "sleepObservation": "1-2 sentences gently connecting their rest state (${sleepSummary}) with their emotional energy",
-  "gentleSuggestion": "1 small, compassionate, non-clinical suggestion for today"
+  "narrative": "2-3 sentence warm, compassionate synthesis of their recent emotional landscape",
+  "emotionalPatterns": ["2-3 specific observations grounded strictly in their recorded check-in emotions and auras"],
+  "commonTriggers": ["1-3 gentle observations about recurring pressures or somatic cues they tagged"],
+  "calmingStrategies": ["2-3 supportive calming rituals tailored to their preferences (${prefsSummary})"],
+  "sleepMoodObservation": "1-2 sentences gently connecting their rest state (${sleepSummary}) with their emotional energy, explicitly framing it as an observed personal correlation rather than a cause",
+  "positiveMoments": ["1-3 bright spots drawn from their calmer check-ins or Star Jar notes"],
+  "gentleSuggestions": ["2-3 small, realistic, non-clinical suggestions for the days ahead"],
+  "weeklySummary": "1 concise sentence summarizing their current sanctuary rhythm"
 }`
 
       const userPrompt = `User Name: ${userName}
 Recent Sleep State: ${sleepSummary}
+Onboarding Preferences: ${prefsSummary}
+Star Jar Gratitude Notes: ${starNotes || 'None yet'}
 Approved Memories:
 ${approvedMemories || 'None shared'}
 
-Recent Check-Ins (${rawCheckIns.length}):
+Recorded Check-Ins (${rawCheckIns.length}):
 ${checkInSummary || 'No check-ins recorded yet.'}`
 
       const response = await fetch(
@@ -192,8 +316,8 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
             generationConfig: {
-              temperature: 0.55,
-              maxOutputTokens: 650,
+              temperature: 0.5,
+              maxOutputTokens: 780,
               responseMimeType: 'application/json',
             },
           }),
@@ -204,7 +328,7 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
         return NextResponse.json({
           configured: true,
           provider: 'local',
-          insights: null,
+          insights: buildLocalInsightsFallback(body),
         })
       }
 
@@ -222,7 +346,7 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
       return NextResponse.json({
         configured: true,
         provider: parsed ? 'gemini' : 'local',
-        insights: parsed,
+        insights: parsed ?? buildLocalInsightsFallback(body),
       })
     }
 

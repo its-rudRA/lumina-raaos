@@ -30,6 +30,7 @@ import {
   type CompanionMessage,
   type OnboardingStatus,
   type SanctuaryExport,
+  type SanctuaryReflection,
   type SanctuaryState,
   type SealedLetter,
   type SemanticMemory,
@@ -235,6 +236,8 @@ export interface SanctuaryContextValue {
   aiStatus: AiConnectionStatus
   aiThinking: boolean
   aiMemoryEnabled: boolean
+  insightReflection: SanctuaryReflection | null
+  insightGenerating: boolean
 
   // persisted state
   authUser: AuthUser | null
@@ -294,6 +297,8 @@ export interface SanctuaryContextValue {
     extra?: { tags?: string[] }
   ) => Promise<string>
   reactToCompanionMessage: (messageId: string, reaction: string) => Promise<void>
+  generateSanctuaryReflection: () => Promise<{ ok: boolean; reason?: string }>
+  reactToInsightReflection: (reaction: string) => Promise<void>
   addMemory: (text: string, category: MemoryCategory) => Promise<void>
   editMemory: (id: string, text: string, category: MemoryCategory) => Promise<void>
   toggleMemoryShare: (id: string) => Promise<void>
@@ -328,6 +333,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
 
   const [aiStatus, setAiStatus] = useState<AiConnectionStatus>('local')
   const [aiThinking, setAiThinking] = useState(false)
+  const [insightGenerating, setInsightGenerating] = useState(false)
   const geminiConfiguredRef = useRef(false)
 
   const [rainPlaying, setRainPlaying] = useState(false)
@@ -917,6 +923,135 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [update]
   )
 
+  const generateSanctuaryReflection = useCallback(async (): Promise<{
+    ok: boolean
+    reason?: string
+  }> => {
+    const currentCheckIns = checkInsRef.current
+    if (currentCheckIns.length < 3) {
+      return { ok: false, reason: 'insufficient_data' }
+    }
+
+    setInsightGenerating(true)
+    const current = profileRef.current
+    const firstName = current.name.trim().split(/\s+/)[0] || 'Friend'
+    const bio = current.bioRhythm ?? DEFAULT_BIO_RHYTHM
+    const aiMemoryEnabled = current.aiMemoryEnabled ?? true
+    const sharedMemories = aiMemoryEnabled
+      ? (current.memories ?? []).filter(m => m.sharedWithAi !== false)
+      : []
+
+    let reflection: SanctuaryReflection | null = null
+
+    try {
+      const res = await fetch('/api/companion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'insights',
+          userName: firstName,
+          checkIns: currentCheckIns.slice(0, 30),
+          bioRhythm: bio,
+          preferences: current.onboarding?.preferences,
+          starJar: (current.starJar ?? []).slice(0, 5),
+          aiMemoryEnabled,
+          memories: sharedMemories,
+        }),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as {
+          configured?: boolean
+          provider?: 'gemini' | 'local'
+          insights?: Record<string, unknown> | null
+        }
+        geminiConfiguredRef.current = Boolean(data.configured)
+        setAiStatus(data.configured ? 'gemini' : 'local')
+        const ins = data.insights
+        if (ins && typeof ins === 'object') {
+          const toStrArr = (v: unknown): string[] =>
+            Array.isArray(v)
+              ? v.map(x => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+              : []
+          reflection = {
+            generatedAt: Date.now(),
+            provider: data.provider === 'gemini' ? 'gemini' : 'local',
+            narrative:
+              typeof ins.narrative === 'string' && ins.narrative.trim()
+                ? ins.narrative.trim()
+                : `${firstName}, across your ${currentCheckIns.length} recorded check-ins, your sanctuary logs reflect a thoughtful awareness of your emotional waves.`,
+            emotionalPatterns: toStrArr(ins.emotionalPatterns),
+            commonTriggers: toStrArr(ins.commonTriggers),
+            calmingStrategies: toStrArr(ins.calmingStrategies),
+            sleepMoodObservation:
+              typeof ins.sleepMoodObservation === 'string' && ins.sleepMoodObservation.trim()
+                ? ins.sleepMoodObservation.trim()
+                : `You logged ${bio.sleepHours}h of ${bio.sleepQuality} rest. Connections between sleep and mood are observed personal correlations rather than medical causes.`,
+            positiveMoments: toStrArr(ins.positiveMoments),
+            gentleSuggestions: toStrArr(ins.gentleSuggestions),
+            weeklySummary:
+              typeof ins.weeklySummary === 'string' && ins.weeklySummary.trim()
+                ? ins.weeklySummary.trim()
+                : `Synthesized from ${currentCheckIns.length} real local check-ins and your chosen Calm DNA.`,
+          }
+        }
+      }
+    } catch {
+      // Fall through to on-device synthesis below
+    }
+
+    if (!reflection) {
+      const total = currentCheckIns.length
+      const auraMap: Record<string, number> = {}
+      const tagMap: Record<string, number> = {}
+      for (const c of currentCheckIns) {
+        auraMap[c.auraLabel] = (auraMap[c.auraLabel] || 0) + 1
+        for (const t of c.tags) tagMap[t] = (tagMap[t] || 0) + 1
+      }
+      const topAura = Object.entries(auraMap).sort((a, b) => b[1] - a[1])[0]
+      const topTags = Object.entries(tagMap).sort((a, b) => b[1] - a[1])
+      reflection = {
+        generatedAt: Date.now(),
+        provider: 'local',
+        narrative: `${firstName}, across your ${total} recorded check-ins, you have most frequently arrived in a “${topAura?.[0] ?? 'Softly Grounded'}” state (${topAura?.[1] ?? total} of ${total} check-ins).`,
+        emotionalPatterns: [
+          `Most frequent aura: “${topAura?.[0] ?? 'Softly Grounded'}” (${topAura?.[1] ?? total} of ${total} check-ins).`,
+        ],
+        commonTriggers:
+          topTags.length > 0
+            ? topTags.slice(0, 3).map(([t, count]) => `“${t}” appeared in ${count} of ${total} check-ins.`)
+            : ['No single somatic tension cue has dominated your logs yet.'],
+        calmingStrategies: [
+          '4s inhale / 6s exhale breathing and 3:00 acoustic rain help soften high-energy moments.',
+        ],
+        sleepMoodObservation: `You logged ${bio.sleepHours}h of ${bio.sleepQuality} rest. Notice how your rest state correlates with your emotional battery—an observed personal correlation rather than a medical cause.`,
+        positiveMoments: [
+          `You have returned for ${total} check-ins at your own pace without streak pressure.`,
+        ],
+        gentleSuggestions: [
+          'Take a quiet 5-minute pause today to let your shoulders drop and breathe.',
+        ],
+        weeklySummary: `Based on ${total} real local check-ins and ${bio.sleepHours}h (${bio.sleepQuality}) of logged rest.`,
+      }
+    }
+
+    await update({ insightReflection: reflection })
+    setInsightGenerating(false)
+    return { ok: true }
+  }, [update])
+
+  const reactToInsightReflection = useCallback(
+    async (reaction: string) => {
+      const existing = profileRef.current.insightReflection
+      if (!existing) return
+      const next: SanctuaryReflection = {
+        ...existing,
+        reaction: existing.reaction === reaction ? undefined : reaction,
+      }
+      await update({ insightReflection: next })
+    },
+    [update]
+  )
+
   // ---- Data sovereignty --------------------------------------------------
   const exportData = useCallback(() => exportSanctuaryData(), [])
 
@@ -942,6 +1077,8 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     aiStatus,
     aiThinking,
     aiMemoryEnabled: profile.aiMemoryEnabled ?? true,
+    insightReflection: profile.insightReflection ?? null,
+    insightGenerating,
     authUser: profile.authUser ?? null,
     onboarding: profile.onboarding ?? DEFAULT_ONBOARDING,
     name: profile.name,
@@ -980,6 +1117,8 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     addStarJarNote,
     sendCompanionThought,
     reactToCompanionMessage,
+    generateSanctuaryReflection,
+    reactToInsightReflection,
     addMemory,
     editMemory,
     toggleMemoryShare,

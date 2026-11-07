@@ -37,3 +37,35 @@
 
 @keyframes somaticScanLine{0%{top:8%;opacity:.35}50%{top:88%;opacity:.95}100%{top:8%;opacity:.35}}
 @keyframes somaticNodePulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.28);opacity:1}}
+
+/* Live Dawn Theme Atmosphere ([data-theme="dawn"]) */
+html[data-theme="dawn"] {
+  --background: #161124;
+  --foreground: #f6eff5;
+  --border: rgba(243, 217, 164, 0.14);
+  background: #161124;
+}
+html[data-theme="dawn"] body {
+  background: linear-gradient(160deg, #161124 0%, #231830 52%, #1b1528 100%);
+  background-attachment: fixed;
+  color: #f6eff5;
+}
+html[data-theme="dawn"] .aurora-one {
+  background: #b56584;
+  opacity: 0.34;
+}
+html[data-theme="dawn"] .aurora-two {
+  background: #c78d6b;
+  opacity: 0.28;
+}
+html[data-theme="dawn"] .aurora-three {
+  background: #7c64a8;
+  opacity: 0.26;
+}
+html[data-theme="dawn"] aside[aria-label="Sanctuary navigation"] {
+  background: rgba(24, 17, 36, 0.86);
+  border-right-color: rgba(232, 184, 199, 0.14);
+}
+html[data-theme="dawn"] .backdrop-blur-2xl {
+  border-color: rgba(232, 184, 199, 0.14);
+}

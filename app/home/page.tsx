@@ -22,6 +22,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import { SomaticPulseScan } from '@/components/somatic-pulse-scan'
 import { useSanctuary } from '@/context/sanctuary-context'
+import { EMOTION_OPTIONS } from '@/lib/db'
 import { auraColor, formatClock, glass, timeAgo } from '@/lib/format'
 
 function greetingFor(hour: number) {
@@ -48,16 +49,36 @@ function HomeContent() {
     rainSeconds,
     toggleRain,
     sendCompanionThought,
+    aiStatus,
+    insightReflection,
   } = useSanctuary()
   const [quickPrompt, setQuickPrompt] = useState('')
   const [sendingPrompt, setSendingPrompt] = useState(false)
 
   const firstName = name.trim().split(/\s+/)[0] || 'friend'
   const latest = checkIns[0]
-  const totalBlooms = Math.max(gardenBlooms, checkIns.length)
-  const latestBloomColor = latest ? auraColor(latest.auraLabel) : aura.color
-  const latestBloomLabel = latest?.auraLabel ?? aura.label
+  const latestEmotionMeta = useMemo(() => {
+    if (!latest) return null
+    const matched =
+      EMOTION_OPTIONS.find(e => e.id === latest.emotionId) ??
+      EMOTION_OPTIONS.find(e => e.label.toLowerCase() === (latest.emotionLabel ?? '').toLowerCase())
+    return {
+      emoji: latest.emoji || matched?.emoji || '🌸',
+      label: latest.emotionLabel || matched?.label || latest.auraLabel,
+      intensity: latest.intensity ?? 3,
+      color: matched?.color || auraColor(latest.auraLabel),
+      auraLabel: latest.auraLabel,
+      note: latest.note,
+      tags: latest.tags,
+      timestamp: latest.timestamp,
+    }
+  }, [latest])
+
+  const totalBlooms = checkIns.length > 0 ? Math.max(gardenBlooms, checkIns.length) : 0
+  const latestBloomColor = latestEmotionMeta ? latestEmotionMeta.color : aura.color
+  const latestBloomLabel = latestEmotionMeta ? latestEmotionMeta.label : 'Awaiting first bloom'
   const comfortEnv = onboarding.preferences?.comfortEnvironment || 'Starry twilight sanctuary'
+  const dailyTime = onboarding.preferences?.dailyTime || '5 minutes'
 
   const latestCompanionMsg = useMemo(() => {
     const rev = [...companionHistory].reverse()
@@ -107,34 +128,58 @@ function HomeContent() {
     return { battery, load }
   }, [checkIns, bioRhythm, orb])
 
-  // Suggested Calming Activity derived from rest & onboarding preferences
+  // Suggested Calming Activity dynamically tailored from onboarding preferences (comfortEnvironment, dailyTime, helpGoals) & somatic cues
   const goals = onboarding.preferences?.helpGoals ?? []
-  const suggestion =
-    bioRhythm.sleepQuality !== 'rested'
-      ? {
-          title: '4s / 6s Somatic Exhale Reset',
-          body: `With ${bioRhythm.sleepHours}h of ${bioRhythm.sleepQuality} rest, a longer exhale gently signals safety to your nervous system.`,
-          href: '/calm-studio',
-          cta: 'Open Calm Studio',
-          icon: Wind,
-        }
-      : goals.includes('Emotional expression') || goals.includes('Managing overwhelming thoughts')
-        ? {
-            title: 'Burn & Release Parchment',
-            body: 'Give one looping or heavy thought a symbolic place to dissolve into rising embers.',
-            href: '/release-room',
-            cta: 'Open Release Room',
-            icon: Flame,
-          }
-        : {
-            title: 'Acoustic Rain & Grounding Pad',
-            body: 'Real-time pink/brown rain synthesis over 174Hz and 261Hz warm harmonic oscillators.',
-            href: '/calm-studio',
-            cta: 'Enter Calm Studio',
-            icon: CloudRain,
-          }
-  const SuggestionIcon = suggestion.icon
+  const latestCues = latest?.tags ?? []
+  const suggestion = useMemo(() => {
+    const hasChestOrBreathCue = latestCues.some(t =>
+      ['Tight chest', 'Restless', 'Shallow breath'].includes(t)
+    )
+    const hasOverthinkingCue = latestCues.some(t =>
+      ['Overthinking', 'Academic pressure', 'Heavy thoughts'].includes(t)
+    )
 
+    if (hasChestOrBreathCue || bioRhythm.sleepQuality !== 'rested') {
+      return {
+        title: `${dailyTime} Somatic Exhale Reset`,
+        body: hasChestOrBreathCue
+          ? `Because you noted "${latestCues[0]}" in your latest check-in, a 4s inhale / 6s exhale pacer in your ${comfortEnv.toLowerCase()} space can gently ease physical bracing.`
+          : `With ${bioRhythm.sleepHours}h of ${bioRhythm.sleepQuality} rest, a ${dailyTime.toLowerCase()} longer-exhale practice signals safety to your nervous system.`,
+        href: '/calm-studio',
+        cta: 'Open Calm Studio',
+        icon: Wind,
+        badge: `${dailyTime} · ${comfortEnv}`,
+      }
+    }
+
+    if (
+      hasOverthinkingCue ||
+      goals.includes('Emotional expression') ||
+      goals.includes('Managing overwhelming thoughts')
+    ) {
+      return {
+        title: 'Burn & Release Parchment',
+        body: hasOverthinkingCue
+          ? `You recently named "${latestCues[0]}"—give one looping thought a symbolic place to dissolve into rising twilight embers.`
+          : `Tailored to your "${goals[0] ?? 'Emotional expression'}" goal (${dailyTime.toLowerCase()} pace): write down one heavy thought and watch it turn to starlight.`,
+        href: '/release-room',
+        cta: 'Open Release Room',
+        icon: Flame,
+        badge: `${dailyTime} · Symbolic release`,
+      }
+    }
+
+    return {
+      title: `Acoustic Rain & ${comfortEnv} Pad`,
+      body: `Tailored to your "${comfortEnv}" preference and ${dailyTime.toLowerCase()} daily rhythm—real-time pink/brown rain synthesis over 174Hz and 261Hz warm harmonic oscillators.`,
+      href: '/calm-studio',
+      cta: 'Enter Calm Studio',
+      icon: CloudRain,
+      badge: `${dailyTime} · ${comfortEnv}`,
+    }
+  }, [latestCues, bioRhythm.sleepQuality, bioRhythm.sleepHours, dailyTime, comfortEnv, goals])
+
+  const SuggestionIcon = suggestion.icon
   const completedDays = journeyCompletedDays.length
   const latestStar = starJar[0]
 
@@ -180,30 +225,70 @@ function HomeContent() {
             <div className="flex items-center justify-between gap-2">
               <p className="eyebrow">Today&apos;s Emotional Check-In</p>
               <span className="text-[11px] text-white/45">
-                {latest ? `Last check-in ${timeAgo(latest.timestamp)}` : 'Ready for your first check-in'}
+                {latest ? `Last check-in ${timeAgo(latest.timestamp)}` : 'No check-ins recorded yet'}
               </span>
             </div>
 
-            <div className="mt-5 flex items-center gap-4">
-              <span
-                className="h-16 w-16 shrink-0 rounded-full"
-                style={{
-                  background: `radial-gradient(circle at 35% 30%, #ffffffd0, ${aura.color} 55%, ${aura.color}40)`,
-                  boxShadow: `0 0 42px ${aura.color}75`,
-                  animation: 'luminaBreathe 5s ease-in-out infinite',
-                }}
-                aria-hidden
-              />
-              <div>
-                <p className="font-serif text-2xl" style={{ color: aura.color }}>
-                  {aura.label}
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-white/55">{aura.note}</p>
+            {latestEmotionMeta ? (
+              <div className="mt-5 flex items-center gap-4">
+                <span
+                  className="grid h-16 w-16 shrink-0 place-items-center rounded-full text-2xl"
+                  style={{
+                    background: `radial-gradient(circle at 35% 30%, #ffffffd0, ${latestEmotionMeta.color} 55%, ${latestEmotionMeta.color}40)`,
+                    boxShadow: `0 0 42px ${latestEmotionMeta.color}75`,
+                    animation: 'luminaBreathe 5s ease-in-out infinite',
+                  }}
+                >
+                  {latestEmotionMeta.emoji}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p
+                      className="font-serif text-2xl"
+                      style={{ color: latestEmotionMeta.color }}
+                    >
+                      {latestEmotionMeta.label}
+                    </p>
+                    <span className="rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/70">
+                      Intensity {latestEmotionMeta.intensity}/5
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-white/60">
+                    {latestEmotionMeta.note
+                      ? `“${latestEmotionMeta.note}”`
+                      : latestEmotionMeta.tags.length
+                        ? `Somatic cues: ${latestEmotionMeta.tags.join(' · ')}`
+                        : `Compass aura: ${latestEmotionMeta.auraLabel}`}
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                <div className="flex items-center gap-3.5">
+                  <span
+                    className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-xl"
+                    style={{
+                      background: `radial-gradient(circle at 35% 30%, #ffffffd0, ${aura.color} 55%, ${aura.color}40)`,
+                      boxShadow: `0 0 28px ${aura.color}65`,
+                    }}
+                  >
+                    🌸
+                  </span>
+                  <div>
+                    <p className="font-serif text-lg text-white">
+                      Welcome to your emotional compass, {firstName}
+                    </p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-white/55">
+                      Choose an emoji mood, rate intensity (1–5), or drag the 2D compass to plant
+                      your first glowing lotus bloom.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Emotional Battery & Mental Load Bars */}
-            <div className="mt-6 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
+            <div className="mt-5 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
               <div>
                 <div className="mb-1.5 flex justify-between text-xs">
                   <span className="text-white/60">Emotional battery</span>
@@ -227,7 +312,7 @@ function HomeContent() {
 
           <div className="mt-6 flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
-              Sculpt your compass &amp; log somatic cues
+              12 emoji states · 2D compass · Somatic cues
             </p>
             <Link href="/check-in" className="primary-button shrink-0 px-5 py-2.5 text-xs">
               <Compass size={14} /> Check In Now <ArrowRight size={13} />
@@ -262,12 +347,14 @@ function HomeContent() {
           <div className="my-6 grid gap-3 rounded-2xl border border-white/[0.08] bg-[#080b12]/65 p-4 sm:grid-cols-3">
             <div className="flex items-center gap-3">
               <span
-                className="h-9 w-9 shrink-0 rounded-full"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm"
                 style={{
                   background: latestBloomColor,
                   boxShadow: `0 0 20px ${latestBloomColor}`,
                 }}
-              />
+              >
+                {latestEmotionMeta?.emoji ?? ''}
+              </span>
               <div className="min-w-0">
                 <p className="eyebrow text-[9px]">Latest bloom tint</p>
                 <p className="truncate font-serif text-base text-white">{latestBloomLabel}</p>
@@ -277,7 +364,9 @@ function HomeContent() {
             <div className="border-t border-white/[0.06] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <p className="eyebrow text-[9px]">Recent cues planted</p>
               <p className="mt-1 truncate text-xs text-white/75">
-                {latest?.tags?.length ? latest.tags.join(' · ') : 'Softly steady · Quiet presence'}
+                {latest?.tags?.length
+                  ? latest.tags.join(' · ')
+                  : 'Plant a check-in to record body cues'}
               </p>
             </div>
 
@@ -316,7 +405,8 @@ function HomeContent() {
                 </div>
               </div>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.03] px-3 py-1 text-[11px] text-white/60">
-                <span className="status-dot" /> Private &amp; on-device
+                <span className="status-dot" />{' '}
+                {aiStatus === 'gemini' ? 'Gemini AI Connected' : 'Local Sanctuary Mode'}
               </span>
             </div>
 
@@ -369,7 +459,7 @@ function HomeContent() {
             </form>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-white/45">
-                4 personas · Voice venting · User-approved Memory Vault
+                AI Companion + Guided Bot · Voice venting · Memory Vault
               </span>
               <Link href="/companion" className="primary-button px-5 py-2.5 text-xs">
                 Open Soul Companion <ArrowRight size={13} />
@@ -383,14 +473,19 @@ function HomeContent() {
           <div>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="eyebrow text-[#a5d4ca]">Suggested Calming Activity</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="eyebrow text-[#a5d4ca]">Suggested Calming Activity</p>
+                  <span className="rounded-full border border-[#8ec9bd]/30 bg-[#8ec9bd]/10 px-2.5 py-0.5 text-[10px] text-[#bfe3da]">
+                    {suggestion.badge}
+                  </span>
+                </div>
                 <h2 className="mt-1 font-serif text-2xl text-white">{suggestion.title}</h2>
               </div>
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/[0.1] bg-white/[0.04] text-[#a5d4ca]">
                 <SuggestionIcon size={18} />
               </span>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">{suggestion.body}</p>
+            <p className="mt-2 text-xs leading-relaxed text-white/60">{suggestion.body}</p>
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4">
@@ -435,13 +530,15 @@ function HomeContent() {
               Moves at the speed of trust—never measured in streaks, never reset for missed days.
             </p>
             <div className="meter lavender mt-4">
-              <span style={{ width: `${Math.max(3, (completedDays / 30) * 100)}%` }} />
+              <span style={{ width: `${(completedDays / 30) * 100}%` }} />
             </div>
           </div>
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <span className="text-xs text-white/45">
-              Next gentle practice: Day {Math.min(30, completedDays + 1)}
+              {completedDays === 0
+                ? 'Begin with Day 1 whenever you feel ready'
+                : `Next gentle practice: Day ${Math.min(30, completedDays + 1)}`}
             </span>
             <Link href="/journey" className="secondary-button px-4 py-2 text-xs">
               Continue My Journey <ArrowRight size={13} />
@@ -462,22 +559,37 @@ function HomeContent() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-                <p className="eyebrow text-[9px]">Latest check-in</p>
-                {latest ? (
+                <p className="eyebrow text-[9px]">
+                  {insightReflection ? 'Latest Sanctuary Reflection' : 'Latest check-in'}
+                </p>
+                {insightReflection ? (
+                  <>
+                    <p className="mt-1 line-clamp-2 font-serif text-sm text-white/90">
+                      “{insightReflection.narrative}”
+                    </p>
+                    <p className="mt-1 text-[10px] text-white/45">
+                      Generated {timeAgo(insightReflection.generatedAt)}
+                    </p>
+                  </>
+                ) : latestEmotionMeta ? (
                   <>
                     <p
                       className="mt-1 font-serif text-lg"
-                      style={{ color: auraColor(latest.auraLabel) }}
+                      style={{ color: latestEmotionMeta.color }}
                     >
-                      {latest.auraLabel}
+                      {latestEmotionMeta.emoji} {latestEmotionMeta.label} ({latestEmotionMeta.intensity}/5)
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-white/50">
-                      {latest.tags.length ? latest.tags.join(' · ') : 'Quiet check-in'} ·{' '}
-                      {timeAgo(latest.timestamp)}
+                      {latestEmotionMeta.tags.length
+                        ? latestEmotionMeta.tags.join(' · ')
+                        : 'Quiet check-in'}{' '}
+                      · {timeAgo(latestEmotionMeta.timestamp)}
                     </p>
                   </>
                 ) : (
-                  <p className="mt-1 text-xs text-white/45">No check-ins recorded yet.</p>
+                  <p className="mt-1 text-xs text-white/45">
+                    No check-ins recorded yet. Check in 3 times to unlock AI Sanctuary Reflections.
+                  </p>
                 )}
               </div>
 

@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   Activity,
-  Check,
   CloudRain,
+  Compass,
   Flame,
   Pause,
-  Play,
   Radar,
   Sparkles,
   Star,
@@ -223,52 +223,48 @@ export function SomaticPulseScan() {
     return { clarity: c, ease: e, battery: b, balanceScore, status }
   }, [orb, bioRhythm, activeNodeIds])
 
-  // 7-point telemetry series built from real checkIns + baseline padding when < 7 check-ins exist
+  // Real telemetry series built strictly from user's recorded check-ins (no fabricated baseline points)
   const series = useMemo(() => {
     const recent = [...checkIns].slice(0, 7).reverse()
-    return WEEK_LABELS.map((day, idx) => {
-      const record = recent[idx]
-      if (record) {
-        const val = Math.max(
-          22,
-          Math.min(94, Math.round(record.orb.x * 0.6 + (100 - record.orb.y) * 0.4))
-        )
-        const load = Math.max(18, Math.min(92, Math.round(record.orb.y * 0.65 + 15)))
-        return {
-          day,
-          dateLabel: shortDate(record.timestamp),
-          auraLabel: record.auraLabel,
-          resonance: val,
-          calmIndex: 100 - Math.round(load * 0.45),
-          isBaseline: false,
-        }
-      }
-      const fallbackRes = Math.max(
-        30,
-        Math.min(88, Math.round(telemetry.balanceScore + Math.sin(idx * 1.1) * 8))
+    return recent.map((record, idx) => {
+      const val = Math.max(
+        22,
+        Math.min(94, Math.round(record.orb.x * 0.6 + (100 - record.orb.y) * 0.4))
+      )
+      const load = Math.max(18, Math.min(92, Math.round(record.orb.y * 0.65 + 15)))
+      const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(
+        new Date(record.timestamp)
       )
       return {
-        day,
-        dateLabel: 'Baseline',
-        auraLabel: aura.label,
-        resonance: fallbackRes,
-        calmIndex: Math.max(28, Math.min(86, fallbackRes - 6)),
-        isBaseline: true,
+        key: `${record.id ?? record.timestamp}-${idx}`,
+        day: weekday || WEEK_LABELS[idx % WEEK_LABELS.length],
+        dateLabel: shortDate(record.timestamp),
+        auraLabel: record.emotionLabel || record.auraLabel,
+        emoji: record.emoji,
+        resonance: val,
+        calmIndex: 100 - Math.round(load * 0.45),
       }
     })
-  }, [checkIns, telemetry.balanceScore, aura.label])
+  }, [checkIns])
 
   // Build smooth SVG cubic-bezier path for the Resonance Wave
   const waveGeometry = useMemo(() => {
     const w = 320
     const h = 135
-    const padX = 18
+    const padX = 22
     const padY = 18
     const usableW = w - padX * 2
     const usableH = h - padY * 2
 
+    if (!series.length) {
+      return { pts: [], primaryLine: '', secondaryLine: '', areaPath: '', w, h }
+    }
+
     const pts = series.map((d, i) => ({
-      x: padX + (i / (series.length - 1)) * usableW,
+      x:
+        series.length === 1
+          ? w / 2
+          : padX + (i / Math.max(1, series.length - 1)) * usableW,
       y: padY + ((100 - d.resonance) / 100) * usableH,
       calmY: padY + ((100 - d.calmIndex) / 100) * usableH,
       data: d,
@@ -276,6 +272,10 @@ export function SomaticPulseScan() {
 
     function smoothPath(coords: Array<{ x: number; y: number }>) {
       if (!coords.length) return ''
+      if (coords.length === 1) {
+        const y = coords[0].y.toFixed(1)
+        return `M ${padX} ${y} L ${(w - padX).toFixed(1)} ${y}`
+      }
       let d = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
       for (let i = 0; i < coords.length - 1; i++) {
         const p0 = coords[i]
@@ -288,7 +288,9 @@ export function SomaticPulseScan() {
 
     const primaryLine = smoothPath(pts)
     const secondaryLine = smoothPath(pts.map(p => ({ x: p.x, y: p.calmY })))
-    const areaPath = `${primaryLine} L ${pts[pts.length - 1].x.toFixed(1)} ${h} L ${pts[0].x.toFixed(1)} ${h} Z`
+    const firstX = series.length === 1 ? padX : pts[0].x
+    const lastX = series.length === 1 ? w - padX : pts[pts.length - 1].x
+    const areaPath = `${primaryLine} L ${lastX.toFixed(1)} ${h} L ${firstX.toFixed(1)} ${h} Z`
 
     return { pts, primaryLine, secondaryLine, areaPath, w, h }
   }, [series])
@@ -632,7 +634,7 @@ export function SomaticPulseScan() {
                 type="button"
                 aria-pressed={bioRhythm.sleepQuality === q}
                 onClick={() => saveSleep({ sleepQuality: q })}
-                className={`min-w-0 truncate rounded-xl border px-2 py-1.5 text-center text-[11px] font-medium leading-tight capitalize transition sm:text-xs ${
+                className={`rounded-xl border px-1.5 py-1.5 text-center text-[11px] font-medium whitespace-nowrap capitalize transition ${
                   bioRhythm.sleepQuality === q
                     ? 'border-[#b8a4e8]/60 bg-[#b8a4e8]/20 text-white'
                     : 'border-white/[0.08] bg-white/[0.03] text-white/50 hover:text-white'
@@ -647,7 +649,7 @@ export function SomaticPulseScan() {
 
       {/* 3. RIGHT COLUMN: EMOTIONAL RESONANCE OVER TIME + AI MICRO-RITUAL SUGGESTIONS */}
       <div className="flex flex-col gap-5 xl:col-span-4">
-        {/* Top Sub-card: Dual Wave & Mon-Sun Bar Chart */}
+        {/* Top Sub-card: Dual Wave & Real Check-In Bar Chart */}
         <div className={`${glass} p-5`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -655,28 +657,46 @@ export function SomaticPulseScan() {
               <h3 className="mt-0.5 font-serif text-xl text-white">
                 {checkIns.length > 0
                   ? `${checkIns.length} Local Check-In${checkIns.length === 1 ? '' : 's'} + Rhythm`
-                  : 'Baseline Resonance Preview'}
+                  : 'Awaiting First Check-In'}
               </h3>
             </div>
-            <div className="tab-pill !p-1">
-              <button
-                type="button"
-                onClick={() => setChartMode('wave')}
-                className={`!px-2.5 !py-1 !text-[10px] ${chartMode === 'wave' ? 'active' : ''}`}
-              >
-                Resonance Wave
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartMode('bars')}
-                className={`!px-2.5 !py-1 !text-[10px] ${chartMode === 'bars' ? 'active' : ''}`}
-              >
-                Weekly Bars
-              </button>
-            </div>
+            {series.length > 0 && (
+              <div className="tab-pill !p-1">
+                <button
+                  type="button"
+                  onClick={() => setChartMode('wave')}
+                  className={`!px-2.5 !py-1 !text-[10px] ${chartMode === 'wave' ? 'active' : ''}`}
+                >
+                  Resonance Wave
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartMode('bars')}
+                  className={`!px-2.5 !py-1 !text-[10px] ${chartMode === 'bars' ? 'active' : ''}`}
+                >
+                  Check-In Bars
+                </button>
+              </div>
+            )}
           </div>
 
-          {chartMode === 'wave' ? (
+          {series.length === 0 ? (
+            <div className="mt-3 flex min-h-[155px] flex-col items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.025] px-4 py-5 text-center">
+              <p className="font-serif text-base text-white/85">
+                Your resonance curve will appear here after your first check-in
+              </p>
+              <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-white/45">
+                LUMINA never plots synthetic baseline curves. Record a check-in or run the 10s
+                Resonance Scan to begin your authentic timeline.
+              </p>
+              <Link
+                href="/check-in"
+                className="secondary-button mt-3 border border-white/[0.1] !px-3.5 !py-1.5 !text-[11px] text-white/80 hover:text-white"
+              >
+                <Compass size={12} /> Open Emotional Check-In
+              </Link>
+            </div>
+          ) : chartMode === 'wave' ? (
             <div className="mt-3">
               <svg
                 viewBox={`0 0 ${waveGeometry.w} ${waveGeometry.h}`}
@@ -708,7 +728,7 @@ export function SomaticPulseScan() {
                 />
                 {waveGeometry.pts.map((pt, idx) => (
                   <g
-                    key={pt.data.day}
+                    key={pt.data.key}
                     className="cursor-pointer"
                     onMouseEnter={() => setHoverPointIdx(idx)}
                     onMouseLeave={() => setHoverPointIdx(null)}
@@ -728,15 +748,16 @@ export function SomaticPulseScan() {
                       fill="rgba(255,255,255,0.42)"
                       fontSize="9"
                     >
-                      {pt.data.day}
+                      {pt.data.dateLabel}
                     </text>
                   </g>
                 ))}
               </svg>
               <div className="mt-1 flex items-center justify-between text-[11px] text-white/50">
-                {hoverPointIdx !== null ? (
+                {hoverPointIdx !== null && series[hoverPointIdx] ? (
                   <span className="text-[#7ec8b8]">
                     {series[hoverPointIdx].day} ({series[hoverPointIdx].dateLabel}):{' '}
+                    {series[hoverPointIdx].emoji ? `${series[hoverPointIdx].emoji} ` : ''}
                     {series[hoverPointIdx].auraLabel} · {series[hoverPointIdx].resonance}%
                   </span>
                 ) : (
@@ -745,23 +766,26 @@ export function SomaticPulseScan() {
               </div>
             </div>
           ) : (
-            <div className="mt-4 grid h-[135px] grid-cols-7 items-end gap-2 px-1 pt-2">
+            <div
+              className="mt-4 grid h-[135px] items-end gap-2 px-1 pt-2"
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(1, series.length)}, minmax(0, 1fr))`,
+              }}
+            >
               {series.map(item => (
-                <div key={item.day} className="flex h-full flex-col items-center justify-end gap-1.5">
-                  <div className="relative flex h-[100px] w-full items-end justify-center rounded-full bg-white/[0.04] p-1">
+                <div key={item.key} className="flex h-full flex-col items-center justify-end gap-1.5">
+                  <div className="relative flex h-[100px] w-full max-w-[36px] items-end justify-center rounded-full bg-white/[0.04] p-1">
                     <span
                       className="w-full rounded-full transition-all duration-500"
                       style={{
                         height: `${item.resonance}%`,
-                        background: item.isBaseline
-                          ? 'linear-gradient(180deg, #b8a4e8, rgba(126,200,184,0.35))'
-                          : 'linear-gradient(180deg, #7ec8b8, #e8a4b8)',
+                        background: 'linear-gradient(180deg, #7ec8b8, #e8a4b8)',
                         boxShadow: '0 0 12px rgba(126,200,184,0.3)',
                       }}
-                      title={`${item.day}: ${item.resonance}% (${item.auraLabel})`}
+                      title={`${item.dateLabel}: ${item.resonance}% (${item.auraLabel})`}
                     />
                   </div>
-                  <span className="text-[10px] text-white/45">{item.day}</span>
+                  <span className="text-[10px] text-white/45">{item.dateLabel}</span>
                 </div>
               ))}
             </div>
