@@ -1219,14 +1219,39 @@ const GROUNDING_STEPS = [
   },
 ]
 
+const SENSORY_54321_PILLS = [
+  { id: 'see', code: '5', label: '5 things you see' },
+  { id: 'touch', code: '4', label: '4 textures you feel' },
+  { id: 'hear', code: '3', label: '3 quiet sounds' },
+  { id: 'scent', code: '2', label: '2 scents in the air' },
+  { id: 'breath', code: '1', label: '1 slow anchor breath' },
+]
+
+const POSTURE_RELEASE_CUES = [
+  'Drop shoulders 1 inch',
+  'Unclench back teeth',
+  'Soften forehead & brow',
+  'Uncurl fingers & palms',
+  'Rest tongue softly',
+  'Plant both feet flat',
+]
+
 function GroundingWalkthrough() {
   const [done, setDone] = useState<boolean[]>([false, false, false])
+  const [sensoryChecked, setSensoryChecked] = useState<string[]>(['breath'])
+  const [postureChecked, setPostureChecked] = useState<string[]>(['Drop shoulders 1 inch'])
   const [note, setNote] = useState('')
   const count = done.filter(Boolean).length
 
+  const toggleSensory = (id: string) =>
+    setSensoryChecked(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+
+  const togglePosture = (cue: string) =>
+    setPostureChecked(prev => (prev.includes(cue) ? prev.filter(x => x !== cue) : [...prev, cue]))
+
   return (
-    <section className={`${glass} flex flex-col justify-between p-6`}>
-      <div>
+    <section className={`${glass} flex flex-col justify-between gap-4 p-6`}>
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="eyebrow">3-Step Somatic Grounding &amp; Overthinking Interruption</p>
@@ -1237,14 +1262,14 @@ function GroundingWalkthrough() {
           </span>
         </div>
 
-        <ul className="mt-4 grid gap-2.5">
+        <ul className="grid gap-2.5">
           {GROUNDING_STEPS.map((g, i) => (
             <li key={g.step}>
               <button
                 type="button"
                 onClick={() => setDone(d => d.map((v, j) => (j === i ? !v : v)))}
                 aria-pressed={done[i]}
-                className={`flex w-full items-start gap-3.5 rounded-2xl border p-4 text-left transition ${
+                className={`flex w-full items-start gap-3.5 rounded-2xl border p-3.5 text-left transition ${
                   done[i]
                     ? 'border-[#8ec9bd]/45 bg-[#8ec9bd]/12'
                     : 'border-white/[0.08] bg-white/[0.03] hover:border-white/20'
@@ -1268,11 +1293,77 @@ function GroundingWalkthrough() {
             </li>
           ))}
         </ul>
+
+        {/* 5-4-3-2-1 Sensory Check-In Micro-Steps */}
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-3.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#7ec8b8]">
+              5-4-3-2-1 Sensory Anchor Check-In
+            </span>
+            <span className="font-mono text-[10px] text-white/45">
+              {sensoryChecked.length}/5 anchored
+            </span>
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {SENSORY_54321_PILLS.map(item => {
+              const active = sensoryChecked.includes(item.id)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => toggleSensory(item.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition ${
+                    active
+                      ? 'border-[#7ec8b8]/55 bg-[#7ec8b8]/18 text-[#d7f7ef]'
+                      : 'border-white/[0.08] bg-white/[0.03] text-white/55 hover:text-white'
+                  }`}
+                >
+                  <span className="grid h-4 w-4 place-items-center rounded-full bg-white/10 font-mono text-[9px]">
+                    {item.code}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Quick Posture Release Toggles */}
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-3.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#b8a4e8]">
+              Quick Somatic Posture Release
+            </span>
+            <span className="font-mono text-[10px] text-white/45">
+              {postureChecked.length} softened
+            </span>
+          </div>
+          <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            {POSTURE_RELEASE_CUES.map(cue => {
+              const on = postureChecked.includes(cue)
+              return (
+                <button
+                  key={cue}
+                  type="button"
+                  onClick={() => togglePosture(cue)}
+                  className={`rounded-xl border px-2.5 py-1.5 text-left text-[11px] transition ${
+                    on
+                      ? 'border-[#b8a4e8]/55 bg-[#b8a4e8]/18 text-white'
+                      : 'border-white/[0.07] bg-white/[0.02] text-white/55 hover:text-white'
+                  }`}
+                >
+                  {on ? '✓ ' : '+ '}
+                  {cue}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      <div>
+      <div className="border-t border-white/[0.07] pt-3">
         <input
-          className="modal-input mt-4 w-full !text-xs"
+          className="modal-input w-full !text-xs"
           value={note}
           onChange={e => setNote(e.target.value)}
           placeholder="Optional: What is one tiny thing you can do in the next 10 minutes?"
@@ -1280,7 +1371,7 @@ function GroundingWalkthrough() {
         />
 
         {count === 3 && (
-          <p className="mt-3 text-xs text-[#bfe3da]" role="status">
+          <p className="mt-2.5 text-xs text-[#bfe3da]" role="status">
             You completed all 3 grounding steps. Notice if your shoulders or breath feel even 5%
             softer.
           </p>

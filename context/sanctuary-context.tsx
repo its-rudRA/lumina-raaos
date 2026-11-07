@@ -38,6 +38,7 @@ import {
   type StarJarNote,
   type WellnessProfilePreferences,
 } from '@/lib/db'
+import { triggerPortalTransition } from '@/components/sanctuary-cinematics'
 
 export type Orb = { x: number; y: number }
 export type SensoryMode = 'full' | 'gentle' | 'low'
@@ -355,8 +356,6 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const [aiThinking, setAiThinking] = useState(false)
   const [insightGenerating, setInsightGenerating] = useState(false)
   const geminiConfiguredRef = useRef(moduleGeminiConfigured)
-  const didCheckAiRef = useRef(false)
-  const didHydrateRef = useRef(false)
 
   const [rainPlaying, setRainPlaying] = useState(false)
   const [rainSeconds, setRainSeconds] = useState(0)
@@ -422,11 +421,8 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [applyProfile]
   )
 
-  // ---- Check Gemini Backend Status & Network Connectivity (ONCE on mount) --
+  // ---- Check Gemini Backend Status & Network Connectivity ----------------
   useEffect(() => {
-    if (didCheckAiRef.current) return
-    didCheckAiRef.current = true
-
     let cancelled = false
     async function checkAiBackend(force = false) {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -501,37 +497,46 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // ---- Hydration (strictly ONCE on mount) --------------------------------
+  // ---- Hydration (Strict-Mode safe + unconditional 1500ms failsafe) --------
   useEffect(() => {
-    if (didHydrateRef.current) return
-    didHydrateRef.current = true
-
     let cancelled = false
-    async function hydrate() {
-      // Never let a blocked/slow IndexedDB leave routes stuck on a loader.
-      const withTimeout = <T,>(p: Promise<T>, fallback: T) =>
-        Promise.race([
-          p.catch(() => fallback),
-          new Promise<T>(resolve => window.setTimeout(() => resolve(fallback), 4000)),
-        ])
-      const [stored, storedCheckIns, storedLetters] = await Promise.all([
-        withTimeout(loadSanctuaryState(), null),
-        withTimeout(getCheckIns(), [] as CheckInRecord[]),
-        withTimeout(getSealedLetters(), [] as SealedLetter[]),
-      ])
-      if (cancelled) return
-      adoptStored(stored)
-      checkInsRef.current = storedCheckIns
-      setCheckIns(storedCheckIns)
-      setSealedLetters(storedLetters)
+
+    // Unconditional 1500ms failsafe so even if IndexedDB is locked by another tab,
+    // LUMINA never gets stuck on <LuminaLoader />.
+    const failsafeTimer = window.setTimeout(() => {
       setIsHydrated(true)
+    }, 1500)
+
+    async function hydrate() {
+      try {
+        const withTimeout = <T,>(p: Promise<T>, fallback: T) =>
+          Promise.race([
+            p.catch(() => fallback),
+            new Promise<T>(resolve => window.setTimeout(() => resolve(fallback), 1200)),
+          ])
+        const [stored, storedCheckIns, storedLetters] = await Promise.all([
+          withTimeout(loadSanctuaryState(), null),
+          withTimeout(getCheckIns(), [] as CheckInRecord[]),
+          withTimeout(getSealedLetters(), [] as SealedLetter[]),
+        ])
+        if (!cancelled) {
+          adoptStored(stored)
+          checkInsRef.current = storedCheckIns
+          setCheckIns(storedCheckIns)
+          setSealedLetters(storedLetters)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true)
+        }
+      }
     }
     void hydrate()
     return () => {
       cancelled = true
+      window.clearTimeout(failsafeTimer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [adoptStored])
 
   // Reflect sensory/theme preferences on <html> for global styling hooks.
   useEffect(() => {
@@ -598,27 +603,49 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
 
   const registerUser = useCallback(
     async (name: string, email: string, password: string) => {
+      triggerPortalTransition(name)
       const user = await registerLocalUser(name, email, password)
+      applyProfile({
+        ...profileRef.current,
+        authUser: user,
+        name: user.name,
+      })
+      setIsHydrated(true)
       await refreshFromDB()
       return user
     },
-    [refreshFromDB]
+    [applyProfile, refreshFromDB]
   )
 
   const signInUser = useCallback(
     async (email: string, password: string) => {
       const user = await signInLocalUser(email, password)
+      triggerPortalTransition(user.name)
+      applyProfile({
+        ...profileRef.current,
+        authUser: user,
+        name: user.name,
+      })
+      setIsHydrated(true)
       await refreshFromDB()
       return user
     },
-    [refreshFromDB]
+    [applyProfile, refreshFromDB]
   )
 
   const continueAsGuest = useCallback(async () => {
+    triggerPortalTransition(profileRef.current.name || 'Gentle Traveler')
     const user = await continueAsGuestUser()
+    applyProfile({
+      ...profileRef.current,
+      authUser: user,
+      name: profileRef.current.name?.trim() || user.name,
+      onboarding: profileRef.current.onboarding ?? DEFAULT_ONBOARDING,
+    })
+    setIsHydrated(true)
     await refreshFromDB()
     return user
-  }, [refreshFromDB])
+  }, [applyProfile, refreshFromDB])
 
   const signOutUser = useCallback(async () => {
     await signOutLocalUser()

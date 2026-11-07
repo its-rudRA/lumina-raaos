@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bot,
   Check,
@@ -16,6 +16,9 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Volume2,
+  VolumeX,
+  Waves,
   Wifi,
   WifiOff,
   X,
@@ -24,26 +27,40 @@ import { AppShell } from '@/components/app-shell'
 import { useSanctuary, type MemoryCategory } from '@/context/sanctuary-context'
 import { glass, SOMATIC_TAGS, shortDate, timeAgo } from '@/lib/format'
 
-const PERSONAS: Array<{ name: string; desc: string; badge: string }> = [
+const PERSONAS: Array<{
+  name: string
+  desc: string
+  badge: string
+  color: string
+  secondaryColor: string
+}> = [
   {
     name: 'The Listener',
     desc: 'Deep emotional validation & warm presence—zero unsolicited advice.',
     badge: 'Validation',
+    color: '#e8a4b8',
+    secondaryColor: '#b8a4e8',
   },
   {
     name: 'The Grounder',
     desc: 'Sensory grounding cues, gentle breathing & body awareness.',
     badge: 'Somatic',
+    color: '#7ec8b8',
+    secondaryColor: '#7eb8c8',
   },
   {
     name: 'The Guide',
     desc: 'Breaks overwhelming moments into tiny, realistic next steps.',
     badge: 'Clarity',
+    color: '#f3d9a4',
+    secondaryColor: '#7ec8b8',
   },
   {
     name: 'Boundary Coach',
     desc: 'Helps phrase compassionate boundaries & protect rest without guilt.',
     badge: 'Boundaries',
+    color: '#b8a4e8',
+    secondaryColor: '#e8a4b8',
   },
 ]
 
@@ -71,6 +88,265 @@ const MEMORY_CATEGORIES: Array<{ value: MemoryCategory; label: string }> = [
   { value: 'reflection', label: 'Reflection' },
   { value: 'boundary', label: 'Boundary' },
 ]
+
+// ---------------------------------------------------------------------------
+// Live Reactive "AI is Talking / Thinking / Listening" Animated Background
+// ---------------------------------------------------------------------------
+
+type AiAuraState = 'idle' | 'typing' | 'thinking' | 'speaking'
+
+function hexToRgb(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '')
+  const num = Number.parseInt(clean, 16)
+  if (Number.isNaN(num)) return [126, 200, 184]
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
+}
+
+function AiLivingAuraBackground({
+  state,
+  persona,
+  typingPulse,
+}: {
+  state: AiAuraState
+  persona: string
+  typingPulse: number
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const stateRef = useRef({ state, persona, typingPulse })
+
+  useEffect(() => {
+    stateRef.current = { state, persona, typingPulse }
+  }, [state, persona, typingPulse])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    let animId = 0
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+
+    const resize = () => {
+      const parent = canvas.parentElement
+      const w = parent?.clientWidth || 720
+      const h = parent?.clientHeight || 520
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    resize()
+    const observer = new ResizeObserver(resize)
+    if (canvas.parentElement) observer.observe(canvas.parentElement)
+
+    interface HarmonicParticle {
+      x: number
+      y: number
+      vy: number
+      size: number
+      phase: number
+    }
+
+    const particles: HarmonicParticle[] = Array.from({ length: 42 }, (_, i) => ({
+      x: (i / 42) * 800,
+      y: Math.random() * 520,
+      vy: 0.35 + Math.random() * 0.85,
+      size: 1.2 + Math.random() * 2.2,
+      phase: Math.random() * Math.PI * 2,
+    }))
+
+    interface InwardRipple {
+      radius: number
+      alpha: number
+    }
+    const ripples: InwardRipple[] = []
+    let lastPulseSeen = stateRef.current.typingPulse
+
+    const start = performance.now()
+    const render = (now: number) => {
+      const t = (now - start) / 1000
+      const w = canvas.width / dpr
+      const h = canvas.height / dpr
+      const cx = w * 0.5
+      const cy = h * 0.44
+
+      const { state: mode, persona: activeName, typingPulse: pCount } = stateRef.current
+      const pDef = PERSONAS.find(p => p.name === activeName) ?? PERSONAS[0]
+      const [r1, g1, b1] = hexToRgb(pDef.color)
+      const [r2, g2, b2] = hexToRgb(pDef.secondaryColor)
+
+      if (pCount !== lastPulseSeen) {
+        lastPulseSeen = pCount
+        ripples.push({ radius: Math.min(w, h) * 0.42, alpha: 0.42 })
+        if (ripples.length > 7) ripples.shift()
+      }
+
+      ctx.clearRect(0, 0, w, h)
+
+      // 1. Central Breathing 3D-Styled AI Core Halo
+      const coreBoost =
+        mode === 'speaking'
+          ? 1.28 + Math.sin(t * 9.5) * 0.16
+          : mode === 'thinking'
+            ? 1.15 + Math.sin(t * 5.2) * 0.12
+            : mode === 'typing'
+              ? 1.08 + Math.sin(t * 3.6) * 0.06
+              : 1.0 + Math.sin(t * 1.6) * 0.05
+
+      const baseRadius = Math.min(w, h) * 0.24 * coreBoost
+      const nebula = ctx.createRadialGradient(cx, cy, 8, cx, cy, baseRadius * 1.65)
+      nebula.addColorStop(
+        0,
+        `rgba(${r1}, ${g1}, ${b1}, ${mode === 'speaking' ? 0.34 : mode === 'thinking' ? 0.28 : 0.16})`
+      )
+      nebula.addColorStop(
+        0.48,
+        `rgba(${r2}, ${g2}, ${b2}, ${mode === 'speaking' ? 0.18 : 0.09})`
+      )
+      nebula.addColorStop(1, 'rgba(9, 10, 20, 0)')
+      ctx.fillStyle = nebula
+      ctx.fillRect(0, 0, w, h)
+
+      // 2. Concentric Inward Ripples when User is Typing
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i]
+        rp.radius -= 2.6
+        rp.alpha *= 0.965
+        if (rp.radius <= 16 || rp.alpha <= 0.02) {
+          ripples.splice(i, 1)
+          continue
+        }
+        ctx.save()
+        ctx.strokeStyle = `rgba(${r1}, ${g1}, ${b1}, ${rp.alpha})`
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.arc(cx, cy, rp.radius, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // 3. Vocal Equalizer Halos & Multi-Band Acoustic Sine Waves (Speaking / Thinking / Idle)
+      const waveBands = mode === 'speaking' ? 4 : mode === 'thinking' ? 3 : 2
+      for (let band = 0; band < waveBands; band++) {
+        const amp =
+          mode === 'speaking'
+            ? (18 + band * 9) * (0.65 + 0.35 * Math.sin(t * 6.5 + band))
+            : mode === 'thinking'
+              ? 10 + band * 5
+              : mode === 'typing'
+                ? 7 + band * 4
+                : 4 + band * 3
+        const freq = mode === 'speaking' ? 0.018 + band * 0.005 : 0.012 + band * 0.004
+        const speed = mode === 'speaking' ? 5.4 + band * 1.3 : mode === 'thinking' ? 3.2 : 1.1
+        const alpha =
+          mode === 'speaking'
+            ? 0.28 - band * 0.05
+            : mode === 'thinking'
+              ? 0.2 - band * 0.04
+              : 0.1 - band * 0.03
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.strokeStyle =
+          band % 2 === 0
+            ? `rgba(${r1}, ${g1}, ${b1}, ${alpha})`
+            : `rgba(${r2}, ${g2}, ${b2}, ${alpha})`
+        ctx.lineWidth = mode === 'speaking' ? 2.2 : 1.4
+        const yCenter = cy + (band - 1) * 26
+        for (let x = 0; x <= w; x += 8) {
+          const edgeAttenuation = Math.sin((x / w) * Math.PI)
+          const y =
+            yCenter +
+            Math.sin(x * freq + t * speed + band) * amp * edgeAttenuation +
+            Math.cos(x * freq * 1.6 - t * (speed * 0.7)) * (amp * 0.45) * edgeAttenuation
+          if (x === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // 4. Orbiting Neural Fireflies when Thinking + 32-Bar Circular Vocal Equalizer Ring when Speaking/Thinking
+      if (mode === 'thinking') {
+        const fireflyCount = 10
+        for (let f = 0; f < fireflyCount; f++) {
+          const orbitAngle = t * (2.1 + (f % 3) * 0.45) + (f / fireflyCount) * Math.PI * 2
+          const orbitRadius = 46 + (f % 4) * 18 + Math.sin(t * 3.4 + f) * 8
+          const fx = cx + Math.cos(orbitAngle) * orbitRadius
+          const fy = cy + Math.sin(orbitAngle) * (orbitRadius * 0.72)
+          ctx.save()
+          ctx.fillStyle = f % 2 === 0 ? `rgba(${r1}, ${g1}, ${b1}, 0.88)` : 'rgba(243, 217, 164, 0.9)'
+          ctx.shadowColor = f % 2 === 0 ? pDef.color : '#f3d9a4'
+          ctx.shadowBlur = 14
+          ctx.beginPath()
+          ctx.arc(fx, fy, 2.6 + (f % 2) * 1.1, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+        }
+      }
+
+      if (mode === 'speaking' || mode === 'thinking') {
+        const bars = 32
+        const ringRad = 54
+        ctx.save()
+        ctx.translate(cx, cy)
+        for (let i = 0; i < bars; i++) {
+          const angle = (i / bars) * Math.PI * 2 + t * 0.4
+          const vocalMod =
+            mode === 'speaking'
+              ? Math.abs(Math.sin(t * 8.5 + i * 0.55) * Math.cos(t * 5.2 - i * 0.3)) * 28
+              : Math.abs(Math.sin(t * 3.8 + i * 0.4)) * 11
+          const inner = ringRad
+          const outer = ringRad + 5 + vocalMod
+          ctx.strokeStyle =
+            i % 2 === 0
+              ? `rgba(${r1}, ${g1}, ${b1}, 0.42)`
+              : `rgba(${r2}, ${g2}, ${b2}, 0.36)`
+          ctx.lineWidth = 2.2
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner)
+          ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer)
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+
+      // 5. Rising Harmonic Particles
+      const speedMult = mode === 'speaking' ? 2.4 : mode === 'thinking' ? 1.7 : 0.75
+      for (const pt of particles) {
+        pt.y -= pt.vy * speedMult
+        if (pt.y < -10) {
+          pt.y = h + 10
+          pt.x = Math.random() * w
+        }
+        const px = pt.x + Math.sin(t * 1.2 + pt.phase) * 12
+        ctx.save()
+        ctx.fillStyle = `rgba(${r1}, ${g1}, ${b1}, ${mode === 'speaking' ? 0.45 : 0.22})`
+        ctx.beginPath()
+        ctx.arc(px, pt.y, pt.size, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
+
+      animId = window.requestAnimationFrame(render)
+    }
+
+    animId = window.requestAnimationFrame(render)
+    return () => {
+      window.cancelAnimationFrame(animId)
+      observer.disconnect()
+    }
+  }, [])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full"
+    />
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic Guided Sanctuary Bot Flows (Branching Interactive Conversations)
@@ -492,10 +768,16 @@ function CompanionContent() {
 
   const [experienceTab, setExperienceTab] = useState<'companion' | 'guided'>('companion')
   const [input, setInput] = useState('')
+  const [typingPulse, setTypingPulse] = useState(0)
   const [activeTags, setActiveTags] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const [listening, setListening] = useState(false)
   const [voiceNote, setVoiceNote] = useState('')
+
+  // Reactive AI Speaking & Voice Response state
+  const [aiSpeakingVisual, setAiSpeakingVisual] = useState(false)
+  const [voiceReadAloud, setVoiceReadAloud] = useState(false)
+  const speakingTimerRef = useRef<number | null>(null)
 
   // Memory Vault form & inline editing state
   const [memText, setMemText] = useState('')
@@ -524,10 +806,47 @@ function CompanionContent() {
   const [savedGuidedToast, setSavedGuidedToast] = useState<string | null>(null)
 
   const recRef = useRef<SpeechRecognitionLike | null>(null)
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const streamContainerRef = useRef<HTMLDivElement | null>(null)
 
+  const speakAiReplyAloud = useCallback(
+    (text: string, force = false) => {
+      if (speakingTimerRef.current) {
+        window.clearTimeout(speakingTimerRef.current)
+      }
+      setAiSpeakingVisual(true)
+
+      if ((voiceReadAloud || force) && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel()
+          const utter = new SpeechSynthesisUtterance(text)
+          utter.rate = 0.92
+          utter.pitch = 0.98
+          utter.volume = 0.78
+          utter.onend = () => {
+            setAiSpeakingVisual(false)
+          }
+          utter.onerror = () => {
+            setAiSpeakingVisual(false)
+          }
+          window.speechSynthesis.speak(utter)
+          return
+        } catch {
+          // fall through to timed visual speaking wave
+        }
+      }
+
+      speakingTimerRef.current = window.setTimeout(() => {
+        setAiSpeakingVisual(false)
+      }, 4500)
+    },
+    [voiceReadAloud]
+  )
+
+  // Scroll message stream smoothly inside its own container so the page never jumps
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const el = streamContainerRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [companionHistory.length, sending, aiThinking])
 
   useEffect(
@@ -537,12 +856,33 @@ function CompanionContent() {
       } catch {
         // ignore
       }
+      if (speakingTimerRef.current) {
+        window.clearTimeout(speakingTimerRef.current)
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel()
+        } catch {
+          // ignore
+        }
+      }
     },
     []
   )
 
   const currentFlow = GUIDED_FLOWS.find(f => f.id === activeFlowId) ?? GUIDED_FLOWS[0]
   const currentNode = currentFlow.nodes[currentNodeId] ?? currentFlow.nodes.start
+  const activePersonaObj = PERSONAS.find(p => p.name === companion) ?? PERSONAS[0]
+
+  // Compute live background state: 'speaking' | 'thinking' | 'typing' | 'idle'
+  const auraVisualState: AiAuraState =
+    aiSpeakingVisual
+      ? 'speaking'
+      : sending || aiThinking
+        ? 'thinking'
+        : input.trim().length > 0 || listening
+          ? 'typing'
+          : 'idle'
 
   function selectGuidedFlow(flowId: string) {
     const picked = GUIDED_FLOWS.find(f => f.id === flowId) ?? GUIDED_FLOWS[0]
@@ -555,6 +895,7 @@ function CompanionContent() {
         text: picked.nodes[picked.startNodeId].botMessage,
       },
     ])
+    speakAiReplyAloud(picked.nodes[picked.startNodeId].botMessage)
   }
 
   function handleGuidedOptionClick(opt: GuidedStepOption) {
@@ -570,6 +911,7 @@ function CompanionContent() {
         memorySuggestion: nextNode.memorySuggestion,
       },
     ])
+    speakAiReplyAloud(nextNode.botMessage)
   }
 
   async function send(text: string) {
@@ -578,8 +920,11 @@ function CompanionContent() {
     setSending(true)
     setInput('')
     setVoiceNote('')
-    await sendCompanionThought(value, companion, { tags: activeTags })
+    const reply = await sendCompanionThought(value, companion, { tags: activeTags })
     setSending(false)
+    if (reply) {
+      speakAiReplyAloud(reply)
+    }
   }
 
   function toggleVoice() {
@@ -607,6 +952,7 @@ function CompanionContent() {
         let t = ''
         for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript
         setInput(`${base}${t}`.trimStart())
+        setTypingPulse(p => p + 1)
       }
       rec.onerror = () => setListening(false)
       rec.onend = () => setListening(false)
@@ -623,310 +969,313 @@ function CompanionContent() {
   const sharedCount = memories.filter(m => m.sharedWithAi !== false).length
 
   return (
-    <div className="mx-auto grid w-full max-w-[1320px] gap-5 xl:grid-cols-[1fr_360px]">
-      <div className="flex min-w-0 flex-col gap-5">
-        {/* Top Bar: Dual Experience Switcher + Real-Time AI Status Indicator */}
-        <div
-          className={`${glass} flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5`}
+    <div className="mx-auto grid w-full max-w-[1380px] gap-4 xl:grid-cols-[1fr_340px]">
+      {/* LEFT MAIN STAGE: FULL-VIEWPORT AI CHATBOX ABOVE THE FOLD */}
+      <div className="flex min-w-0 flex-col">
+        <section
+          className={`${glass} relative flex h-[calc(100vh-130px)] min-h-[540px] max-h-[840px] flex-col justify-between overflow-hidden border border-white/[0.12] p-3.5 sm:p-5`}
         >
-          <div className="tab-pill bg-[#0c0a16]/90">
-            <button
-              type="button"
-              onClick={() => setExperienceTab('companion')}
-              className={experienceTab === 'companion' ? 'active' : ''}
-            >
-              <Sparkles size={13} className="mr-1.5 inline" />
-              Soul Companion (AI &amp; Contextual)
-            </button>
-            <button
-              type="button"
-              onClick={() => setExperienceTab('guided')}
-              className={experienceTab === 'guided' ? 'active' : ''}
-            >
-              <Bot size={13} className="mr-1.5 inline" />
-              Guided Sanctuary Bot (Interactive Flows)
-            </button>
-          </div>
+          {/* Live Reactive "AI is Talking / Thinking / Listening" Animated Background Canvas */}
+          <AiLivingAuraBackground
+            state={auraVisualState}
+            persona={companion}
+            typingPulse={typingPulse}
+          />
 
-          {/* Real-Time AI Connection Status Pill */}
-          <div className="flex items-center gap-2">
-            {aiStatus === 'gemini' ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#8ec9bd]/40 bg-[#8ec9bd]/15 px-3 py-1 text-[11px] font-medium text-[#b7ebe0] shadow-[0_0_16px_rgba(142,201,189,0.2)]">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[#8ec9bd]" />
-                <Wifi size={12} /> Gemini AI Connected
-              </span>
-            ) : aiStatus === 'offline' ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 text-[11px] font-medium text-white/65">
-                <WifiOff size={12} /> Offline (On-Device Sanctuary Mode)
-              </span>
-            ) : (
-              <span
-                title="Add GEMINI_API_KEY in .env.local on the server to enable live Gemini 2.5 Flash cloud responses"
-                className="inline-flex items-center gap-2 rounded-full border border-[#f3d9a4]/40 bg-[#f3d9a4]/12 px-3 py-1 text-[11px] font-medium text-[#f7dfb2]"
-              >
-                <span className="h-2 w-2 rounded-full bg-[#f3d9a4]" />
-                Local Mode (Set GEMINI_API_KEY in .env.local for cloud AI)
-              </span>
-            )}
-          </div>
-        </div>
-
-        {experienceTab === 'companion' ? (
-          <>
-            {/* 4 Empathetic Personas */}
-            <section className="grid gap-2.5 sm:grid-cols-2">
-              {PERSONAS.map(p => {
-                const active = companion === p.name
-                return (
-                  <button
-                    key={p.name}
-                    type="button"
-                    onClick={() => setCompanion(p.name)}
-                    aria-pressed={active}
-                    className={`rounded-2xl border p-4 text-left transition ${
-                      active
-                        ? 'border-[#e1acc1]/55 bg-[#daa9c2]/15 shadow-[0_0_24px_rgba(225,172,193,0.12)]'
-                        : 'border-white/[0.08] bg-white/[0.03] hover:border-white/20'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p
-                        className={`font-serif text-lg ${
-                          active ? 'text-[#f4d9e2]' : 'text-white/85'
-                        }`}
-                      >
-                        {p.name}
-                      </p>
-                      <span className="rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-0.5 text-[10px] tracking-wider text-white/55 uppercase">
-                        {p.badge}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-white/50">{p.desc}</p>
-                  </button>
-                )
-              })}
-            </section>
-
-            {/* Conversation Stream + Emoji Quick Reactions */}
-            <section className={`${glass} flex min-h-[450px] flex-col p-4 sm:p-5`}>
-              <div
-                className="max-h-[460px] flex-1 space-y-3.5 overflow-y-auto pr-1"
-                aria-live="polite"
-              >
-                {companionHistory.length === 0 ? (
-                  <div className="grid h-full min-h-[220px] place-items-center text-center">
-                    <div className="max-w-sm space-y-2">
-                      <p className="font-serif text-xl text-white/85">
-                        {companion} is here with you.
-                      </p>
-                      <p className="text-xs leading-relaxed text-white/45">
-                        Share whatever is weighing on you, or choose a starter prompt below. Your
-                        approved Memory Vault context ({aiMemoryEnabled ? `${sharedCount} shared` : 'paused'}) is
-                        respected automatically.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  companionHistory.map(m => (
-                    <div
-                      key={m.id}
-                      className={`flex flex-col ${
-                        m.role === 'user' ? 'items-end' : 'items-start'
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[86%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                          m.role === 'user'
-                            ? 'rounded-br-md bg-[#daa9c2]/20 text-[#f4d9e2]'
-                            : 'rounded-bl-md border border-white/[0.09] bg-white/[0.05] text-white/85'
-                        }`}
-                      >
-                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="eyebrow text-[9px]">
-                              {m.role === 'companion' ? m.mode : 'You'}
-                            </span>
-                            {m.role === 'companion' && m.provider && (
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${
-                                  m.provider === 'gemini'
-                                    ? 'bg-[#8ec9bd]/15 text-[#a4e5d6]'
-                                    : 'bg-white/[0.06] text-white/50'
-                                }`}
-                              >
-                                {m.provider === 'gemini' ? 'Gemini 2.5' : 'Local Sanctuary'}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-white/35">{timeAgo(m.timestamp)}</span>
-                        </div>
-                        <p className="whitespace-pre-line">{m.text}</p>
-                      </div>
-
-                      {/* Emoji Quick Reactions on Companion Messages */}
-                      {m.role === 'companion' && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                          {MESSAGE_REACTIONS.map(reaction => {
-                            const active = m.reaction === reaction
-                            return (
-                              <button
-                                key={reaction}
-                                type="button"
-                                onClick={() => void reactToCompanionMessage(m.id, reaction)}
-                                className={`rounded-full border px-2.5 py-0.5 text-[10px] transition ${
-                                  active
-                                    ? 'border-[#e8a4b8]/60 bg-[#e8a4b8]/20 text-[#fce4ec] shadow-sm'
-                                    : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/20 hover:text-white/80'
-                                }`}
-                              >
-                                {reaction}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-
-                {(sending || aiThinking) && (
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-[#8ec9bd]/25 bg-[#8ec9bd]/10 px-4 py-2.5 text-xs text-[#b7ebe0] w-fit">
-                    <span className="h-2 w-2 animate-ping rounded-full bg-[#8ec9bd]" />
-                    <span>LUMINA ({companion}) is gently reflecting…</span>
-                  </div>
-                )}
-                <div ref={endRef} />
-              </div>
-
-              {/* Starter Prompts */}
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {STARTERS.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => void send(s)}
-                    disabled={sending || aiThinking}
-                    className="rounded-full border border-white/[0.09] bg-white/[0.03] px-3 py-1.5 text-[11px] text-white/60 transition hover:border-white/25 hover:text-white"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-
-              {/* Somatic Body & Mind Cues */}
-              <details className="mt-3">
-                <summary className="cursor-pointer text-[11px] text-white/45 hover:text-white/70">
-                  What is present in your body?{' '}
-                  {activeTags.length ? `(${activeTags.length} selected)` : '(optional context)'}
-                </summary>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {SOMATIC_TAGS.map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      aria-pressed={activeTags.includes(t)}
-                      onClick={() =>
-                        setActiveTags(
-                          activeTags.includes(t)
-                            ? activeTags.filter(x => x !== t)
-                            : [...activeTags, t]
-                        )
-                      }
-                      className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
-                        activeTags.includes(t)
-                          ? 'border-[#e1acc1]/60 bg-[#daa9c2]/20 text-[#f4d9e2]'
-                          : 'border-white/[0.09] text-white/50 hover:text-white/80'
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </details>
-
-              {/* Message Input & Voice Venting */}
-              <form
-                className="mt-3 flex items-center gap-2"
-                onSubmit={e => {
-                  e.preventDefault()
-                  void send(input)
-                }}
-              >
-                <input
-                  className="companion-input"
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder={listening ? 'Listening…' : `Write to ${companion}…`}
-                  aria-label="Message to your companion"
-                />
+          {/* Compact Top Stage Header: Experience Toggle, Persona Selector Bar, Voice Response & Status */}
+          <div className="relative z-10 space-y-2.5 border-b border-white/[0.08] pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Experience Switcher */}
+              <div className="tab-pill bg-[#0c0a16]/90 !p-1">
                 <button
                   type="button"
-                  onClick={toggleVoice}
-                  aria-pressed={listening}
-                  aria-label={listening ? 'Stop voice venting' : 'Start voice venting'}
-                  className="mic-button !h-9"
+                  onClick={() => setExperienceTab('companion')}
+                  className={`!px-3 !py-1 !text-[11px] ${
+                    experienceTab === 'companion' ? 'active' : ''
+                  }`}
                 >
-                  {listening ? <MicOff size={15} /> : <Mic size={15} />}
+                  <Sparkles size={12} className="mr-1.5 inline" />
+                  Soul Companion
                 </button>
                 <button
-                  type="submit"
-                  disabled={!input.trim() || sending || aiThinking}
-                  className="primary-button px-4 py-2.5 text-xs"
+                  type="button"
+                  onClick={() => setExperienceTab('guided')}
+                  className={`!px-3 !py-1 !text-[11px] ${
+                    experienceTab === 'guided' ? 'active' : ''
+                  }`}
                 >
-                  <Send size={13} /> Send
+                  <Bot size={12} className="mr-1.5 inline" />
+                  Guided Flows
                 </button>
-              </form>
-              {voiceNote && <p className="mt-2 text-[11px] text-white/45">{voiceNote}</p>}
-            </section>
-          </>
-        ) : (
-          /* TAB B: Guided Sanctuary Bot (Structured Interactive Flows) */
-          <section className={`${glass} flex flex-col gap-5 p-5 sm:p-6`}>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-4">
-              <div>
-                <p className="eyebrow text-[#8ec9bd]">
-                  Deterministic Guided Sanctuary Bot · Instant Interactive Flows
-                </p>
-                <h2 className="mt-1 font-serif text-2xl text-white">
-                  Step-by-step interactive unknotting when typing feels like too much
-                </h2>
               </div>
-              <button
-                type="button"
-                onClick={() => selectGuidedFlow(currentFlow.id)}
-                className="secondary-button px-3 py-1.5 text-xs"
-              >
-                <RotateCcw size={13} /> Reset Current Flow
-              </button>
+
+              {/* Right Utility Pills: Live AI Vocal State + Voice Response On/Off + Gemini Status */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {/* Live AI Resonance State Badge */}
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition ${
+                    auraVisualState === 'speaking'
+                      ? 'border-[#e8a4b8]/60 bg-[#e8a4b8]/20 text-[#fce4ec] shadow-[0_0_16px_rgba(232,164,184,0.3)]'
+                      : auraVisualState === 'thinking'
+                        ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/20 text-[#d7f7ef]'
+                        : auraVisualState === 'typing'
+                          ? 'border-[#b8a4e8]/50 bg-[#b8a4e8]/15 text-[#e8defc]'
+                          : 'border-white/10 bg-white/[0.04] text-white/60'
+                  }`}
+                >
+                  <Waves
+                    size={11}
+                    className={auraVisualState === 'speaking' ? 'animate-pulse text-[#e8a4b8]' : ''}
+                  />
+                  {auraVisualState === 'speaking'
+                    ? 'AI Speaking · Vocal Wave Active'
+                    : auraVisualState === 'thinking'
+                      ? 'AI Reflecting…'
+                      : auraVisualState === 'typing'
+                        ? 'Listening to you…'
+                        : 'Present & Listening'}
+                </span>
+
+                {/* Voice Response On/Off Toggle */}
+                <button
+                  type="button"
+                  aria-pressed={voiceReadAloud}
+                  onClick={() => {
+                    const next = !voiceReadAloud
+                    setVoiceReadAloud(next)
+                    if (!next && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                      window.speechSynthesis.cancel()
+                      setAiSpeakingVisual(false)
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition ${
+                    voiceReadAloud
+                      ? 'border-[#f3d9a4]/55 bg-[#f3d9a4]/18 text-[#f7dfb2]'
+                      : 'border-white/10 bg-white/[0.04] text-white/60 hover:text-white'
+                  }`}
+                >
+                  {voiceReadAloud ? <Volume2 size={11} /> : <VolumeX size={11} />}
+                  <span>Voice Response {voiceReadAloud ? 'On' : 'Off'}</span>
+                </button>
+
+                {/* AI Connection Status */}
+                {aiStatus === 'gemini' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#8ec9bd]/40 bg-[#8ec9bd]/15 px-2.5 py-1 text-[10px] font-medium text-[#b7ebe0]">
+                    <Wifi size={11} /> Gemini 2.5
+                  </span>
+                ) : aiStatus === 'offline' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10px] text-white/65">
+                    <WifiOff size={11} /> Offline Mode
+                  </span>
+                ) : (
+                  <span
+                    title="Add GEMINI_API_KEY in .env.local on the server to enable live Gemini 2.5 Flash cloud responses"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#f3d9a4]/35 bg-[#f3d9a4]/10 px-2.5 py-1 text-[10px] text-[#f7dfb2]"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#f3d9a4]" />
+                    Local Sanctuary AI
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* 4 Guided Bot Flow Selector Cards */}
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-              {GUIDED_FLOWS.map(flow => {
-                const active = flow.id === currentFlow.id
-                return (
-                  <button
-                    key={flow.id}
-                    type="button"
-                    onClick={() => selectGuidedFlow(flow.id)}
-                    className={`rounded-2xl border p-3.5 text-left transition ${
-                      active
-                        ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/15 shadow-[0_0_20px_rgba(142,201,189,0.14)]'
-                        : 'border-white/[0.08] bg-white/[0.03] hover:border-white/20'
+            {/* Sleek Single-Row Persona Selector Bar (Replaces bulky 2x2 boxes so chat stays above the fold) */}
+            {experienceTab === 'companion' ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {PERSONAS.map(p => {
+                    const active = companion === p.name
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => setCompanion(p.name)}
+                        aria-pressed={active}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ${
+                          active
+                            ? 'border-white/35 bg-white/[0.14] font-medium text-white shadow-sm'
+                            : 'border-white/[0.08] bg-[#0b0914]/60 text-white/60 hover:border-white/20 hover:text-white'
+                        }`}
+                        style={
+                          active
+                            ? {
+                                borderColor: `${p.color}88`,
+                                boxShadow: `0 0 16px ${p.color}33`,
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: p.color }}
+                        />
+                        <span>{p.name}</span>
+                        <span className="hidden rounded-full bg-white/10 px-1.5 py-0.2 text-[9px] text-white/70 sm:inline">
+                          {p.badge}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <span className="hidden text-[11px] text-white/50 lg:inline">
+                  {activePersonaObj.desc}
+                </span>
+              </div>
+            ) : (
+              /* Compact Guided Flow Selector Pills */
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {GUIDED_FLOWS.map(flow => {
+                    const active = flow.id === currentFlow.id
+                    return (
+                      <button
+                        key={flow.id}
+                        type="button"
+                        onClick={() => selectGuidedFlow(flow.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ${
+                          active
+                            ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/20 font-medium text-white'
+                            : 'border-white/[0.08] bg-[#0b0914]/60 text-white/60 hover:text-white'
+                        }`}
+                      >
+                        <span>{flow.emoji}</span>
+                        <span>{flow.title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => selectGuidedFlow(currentFlow.id)}
+                  className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/65 hover:text-white"
+                >
+                  <RotateCcw size={11} /> Reset Flow
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* CENTER SCROLLABLE MESSAGE STREAM */}
+          {experienceTab === 'companion' ? (
+            <div
+              ref={streamContainerRef}
+              className="relative z-10 my-2 flex-1 space-y-3 overflow-y-auto pr-1.5"
+              aria-live="polite"
+            >
+              {companionHistory.length === 0 ? (
+                <div className="grid h-full place-items-center text-center">
+                  <div className="max-w-md rounded-3xl border border-white/[0.08] bg-[#090814]/55 p-6 backdrop-blur-md">
+                    <div
+                      className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full border"
+                      style={{
+                        borderColor: `${activePersonaObj.color}66`,
+                        backgroundColor: `${activePersonaObj.color}18`,
+                        boxShadow: `0 0 28px ${activePersonaObj.color}44`,
+                      }}
+                    >
+                      <Sparkles size={20} style={{ color: activePersonaObj.color }} />
+                    </div>
+                    <p className="font-serif text-2xl text-white">
+                      {companion} is listening with you.
+                    </p>
+                    <p className="mt-1.5 text-xs leading-relaxed text-white/55">
+                      {activePersonaObj.desc} Start typing below or tap a quick starter—watch the
+                      living aura background respond to your words and voice.
+                    </p>
+                    <p className="mt-2 text-[10px] text-[#8ec9bd]">
+                      Memory Vault Context:{' '}
+                      {aiMemoryEnabled ? `${sharedCount} approved notes active` : 'Paused'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                companionHistory.map(m => (
+                  <div
+                    key={m.id}
+                    className={`flex flex-col ${
+                      m.role === 'user' ? 'items-end' : 'items-start'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{flow.emoji}</span>
-                      <span className="font-serif text-base text-white">{flow.title}</span>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed backdrop-blur-md ${
+                        m.role === 'user'
+                          ? 'rounded-br-md border border-[#e8a4b8]/35 bg-[#daa9c2]/22 text-[#f9e8ef]'
+                          : 'rounded-bl-md border border-white/[0.12] bg-[#0c0a18]/80 text-white/90 shadow-lg'
+                      }`}
+                    >
+                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="eyebrow text-[9px] text-white/60">
+                            {m.role === 'companion' ? m.mode : 'You'}
+                          </span>
+                          {m.role === 'companion' && m.provider && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${
+                                m.provider === 'gemini'
+                                  ? 'bg-[#8ec9bd]/20 text-[#a4e5d6]'
+                                  : 'bg-white/[0.08] text-white/60'
+                              }`}
+                            >
+                              {m.provider === 'gemini' ? 'Gemini 2.5' : 'Local Sanctuary'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {m.role === 'companion' && (
+                            <button
+                              type="button"
+                              onClick={() => speakAiReplyAloud(m.text, true)}
+                              title="Speak this response aloud with reactive waveform"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[9px] text-white/60 hover:border-[#f3d9a4]/45 hover:text-[#f7dfb2]"
+                            >
+                              <Volume2 size={10} /> Speak
+                            </button>
+                          )}
+                          <span className="text-[10px] text-white/35">{timeAgo(m.timestamp)}</span>
+                        </div>
+                      </div>
+                      <p className="whitespace-pre-line">{m.text}</p>
                     </div>
-                    <p className="mt-1 text-[11px] leading-snug text-white/50">{flow.subtitle}</p>
-                  </button>
-                )
-              })}
-            </div>
 
-            {/* Guided Conversation Transcript */}
-            <div className="space-y-3 rounded-2xl border border-white/[0.08] bg-[#0b0914]/65 p-4">
+                    {/* Emoji Quick Reactions on Companion Messages */}
+                    {m.role === 'companion' && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {MESSAGE_REACTIONS.map(reaction => {
+                          const active = m.reaction === reaction
+                          return (
+                            <button
+                              key={reaction}
+                              type="button"
+                              onClick={() => void reactToCompanionMessage(m.id, reaction)}
+                              className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+                                active
+                                  ? 'border-[#e8a4b8]/60 bg-[#e8a4b8]/25 text-[#fce4ec]'
+                                  : 'border-white/[0.07] bg-[#0b0914]/70 text-white/50 hover:border-white/20 hover:text-white/85'
+                              }`}
+                            >
+                              {reaction}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+
+              {(sending || aiThinking) && (
+                <div className="flex w-fit items-center gap-2.5 rounded-2xl border border-[#8ec9bd]/35 bg-[#0c0a18]/85 px-4 py-2.5 text-xs text-[#b7ebe0] backdrop-blur-md">
+                  <span className="h-2 w-2 animate-ping rounded-full bg-[#8ec9bd]" />
+                  <span>LUMINA ({companion}) is resonating with your thought…</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* GUIDED BOT INTERACTIVE STREAM */
+            <div
+              ref={streamContainerRef}
+              className="relative z-10 my-2 flex-1 space-y-3 overflow-y-auto pr-1.5"
+            >
               {guidedTranscript.map(entry => (
                 <div
                   key={entry.id}
@@ -935,10 +1284,10 @@ function CompanionContent() {
                   }`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed backdrop-blur-md ${
                       entry.role === 'user'
-                        ? 'rounded-br-md bg-[#daa9c2]/20 text-[#f4d9e2]'
-                        : 'rounded-bl-md border border-[#8ec9bd]/25 bg-[#8ec9bd]/10 text-white/90'
+                        ? 'rounded-br-md bg-[#daa9c2]/22 text-[#f4d9e2]'
+                        : 'rounded-bl-md border border-[#8ec9bd]/30 bg-[#0c0a18]/85 text-white/90'
                     }`}
                   >
                     <span className="eyebrow mb-1 block text-[9px] text-[#8ec9bd]">
@@ -973,206 +1322,287 @@ function CompanionContent() {
                   </div>
                 </div>
               ))}
-
-              {/* Interactive Branching Option Buttons */}
-              <div className="pt-2">
-                <p className="mb-2 text-[11px] font-medium tracking-wider text-white/45 uppercase">
-                  Choose your response:
+              {savedGuidedToast && (
+                <p className="text-xs text-[#8ec9bd]" role="status">
+                  ✓ {savedGuidedToast}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {currentNode.options.map(opt => (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => handleGuidedOptionClick(opt)}
-                      className="rounded-xl border border-[#8ec9bd]/35 bg-[#8ec9bd]/12 px-3.5 py-2 text-xs font-medium text-[#d4f2ea] transition hover:border-[#8ec9bd]/70 hover:bg-[#8ec9bd]/25"
-                    >
-                      <Compass size={12} className="mr-1.5 inline text-[#8ec9bd]" />
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
-
-            {savedGuidedToast && (
-              <p className="text-xs text-[#8ec9bd]" role="status">
-                ✓ {savedGuidedToast}
-              </p>
-            )}
-          </section>
-        )}
-
-        <p className="text-center text-[11px] leading-relaxed text-white/35">
-          LUMINA is a supportive reflection companion, not a therapist or crisis service, and it
-          cannot diagnose or treat anything. If you might be in danger, use the Immediate support
-          button above.
-        </p>
-      </div>
-
-      {/* Upgraded User-Controlled Memory Vault Sidebar */}
-      <aside className={`${glass} h-fit p-5`}>
-        <div className="flex items-center justify-between gap-2">
-          <p className="eyebrow text-[#a4d1c8]">Memory Vault · User-Controlled</p>
-          <span className="rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/60">
-            {memories.length} {memories.length === 1 ? 'note' : 'notes'}
-          </span>
-        </div>
-        <p className="mt-1 text-xs leading-relaxed text-white/45">
-          You decide what LUMINA remembers. Toggle AI sharing per memory, edit anytime, or keep
-          notes strictly private.
-        </p>
-
-        {/* Master AI Memory Sharing Toggle */}
-        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.03] px-3.5 py-2.5">
-          <div>
-            <p className="text-xs font-medium text-white/85">Share approved memories with AI</p>
-            <p className="text-[10px] text-white/45">
-              {aiMemoryEnabled
-                ? `${sharedCount} of ${memories.length} shared with companion`
-                : 'AI memory sharing is paused'}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={aiMemoryEnabled}
-            onClick={() => void setAiMemoryEnabled(!aiMemoryEnabled)}
-            className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
-              aiMemoryEnabled
-                ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/35'
-                : 'border-white/15 bg-white/10'
-            }`}
-          >
-            <span
-              className={`block h-4 w-4 rounded-full bg-white transition-transform ${
-                aiMemoryEnabled ? 'translate-x-5' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Memory List */}
-        <ul className="mt-4 grid max-h-[380px] gap-2.5 overflow-y-auto pr-1">
-          {memories.length === 0 && (
-            <li className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] p-4 text-center text-xs text-white/40">
-              Your Memory Vault is empty. Add an anchor, preference, trigger, or boundary below.
-            </li>
           )}
-          {memories.map(m => {
-            const isEditing = editingMemId === m.id
-            const isShared = m.sharedWithAi !== false && aiMemoryEnabled
-            return (
-              <li
-                key={m.id}
-                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 transition hover:border-white/[0.15]"
-              >
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <textarea
-                      value={editMemText}
-                      onChange={e => setEditMemText(e.target.value)}
-                      maxLength={220}
-                      rows={2}
-                      className="w-full rounded-xl border border-white/15 bg-[#0c0a16] px-2.5 py-1.5 text-xs text-white focus:border-[#8ec9bd] focus:outline-none"
-                    />
-                    <div className="flex items-center justify-between gap-2">
-                      <select
-                        value={editMemCat}
-                        onChange={e => setEditMemCat(e.target.value as MemoryCategory)}
-                        className="unlock-select !py-1 !text-[11px]"
+
+          {/* BOTTOM INPUT DOCK (100% Visible Above the Fold) */}
+          <div className="relative z-10 border-t border-white/[0.08] pt-2.5">
+            {experienceTab === 'companion' ? (
+              <>
+                {/* Quick Starter Chips + Compact Somatic Tag Selector */}
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+                  <div className="flex flex-wrap gap-1">
+                    {STARTERS.map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => void send(s)}
+                        disabled={sending || aiThinking}
+                        className="rounded-full border border-white/[0.09] bg-[#0b0914]/70 px-2.5 py-1 text-[10.5px] text-white/65 transition hover:border-white/25 hover:text-white"
                       >
-                        {MEMORY_CATEGORIES.map(c => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void editMemory(m.id, editMemText, editMemCat)
-                            setEditingMemId(null)
-                          }}
-                          className="secondary-button !px-2.5 !py-1 !text-[11px] text-[#8ec9bd]"
-                        >
-                          <Check size={12} /> Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingMemId(null)}
-                          className="secondary-button !px-2 !py-1 !text-[11px]"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    </div>
+                        {s}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <span className="eyebrow rounded-full border border-white/[0.09] bg-white/[0.04] px-2 py-0.5 text-[9px] text-[#a4d1c8]">
-                        {m.category} · {shortDate(m.createdAt)}
-                      </span>
-                      <div className="flex items-center gap-1.5">
+
+                  <details className="relative">
+                    <summary className="cursor-pointer list-none rounded-full border border-white/[0.09] bg-[#0b0914]/70 px-2.5 py-1 text-[10.5px] text-[#8ec9bd] hover:border-white/25">
+                      + Body Cues {activeTags.length ? `(${activeTags.length})` : ''}
+                    </summary>
+                    <div className="absolute right-0 bottom-8 z-30 flex w-72 flex-wrap gap-1 rounded-2xl border border-white/15 bg-[#0c0a18]/95 p-3 shadow-2xl backdrop-blur-xl">
+                      {SOMATIC_TAGS.map(t => (
                         <button
+                          key={t}
                           type="button"
-                          onClick={() => void toggleMemoryShare(m.id)}
-                          title={
-                            m.sharedWithAi === false
-                              ? 'Private (click to allow AI context)'
-                              : 'Shared with AI (click to make private)'
+                          onClick={() =>
+                            setActiveTags(
+                              activeTags.includes(t)
+                                ? activeTags.filter(x => x !== t)
+                                : [...activeTags, t]
+                            )
                           }
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition ${
-                            isShared
-                              ? 'border-[#8ec9bd]/35 bg-[#8ec9bd]/12 text-[#b7ebe0]'
-                              : 'border-white/10 bg-white/[0.04] text-white/45'
+                          className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+                            activeTags.includes(t)
+                              ? 'border-[#e1acc1]/60 bg-[#daa9c2]/25 text-[#f4d9e2]'
+                              : 'border-white/[0.09] text-white/55 hover:text-white'
                           }`}
                         >
-                          {m.sharedWithAi === false ? (
-                            <>
-                              <EyeOff size={10} /> Private
-                            </>
-                          ) : (
-                            <>
-                              <Eye size={10} /> Shared
-                            </>
-                          )}
+                          {t}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingMemId(m.id)
-                            setEditMemText(m.text)
-                            setEditMemCat(m.category)
-                          }}
-                          aria-label="Edit memory"
-                          className="text-white/40 hover:text-white/85"
+                      ))}
+                    </div>
+                  </details>
+                </div>
+
+                {/* Message Input & Voice Venting */}
+                <form
+                  className="flex items-center gap-2"
+                  onSubmit={e => {
+                    e.preventDefault()
+                    void send(input)
+                  }}
+                >
+                  <input
+                    className="companion-input !bg-[#080711]/80 !py-2.5 !text-xs backdrop-blur-md"
+                    value={input}
+                    onChange={e => {
+                      setInput(e.target.value)
+                      setTypingPulse(p => p + 1)
+                    }}
+                    placeholder={
+                      listening
+                        ? 'Listening to your voice…'
+                        : `Share a thought with ${companion}… (watch the aura ripple as you type)`
+                    }
+                    aria-label="Message to your companion"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleVoice}
+                    aria-pressed={listening}
+                    aria-label={listening ? 'Stop voice venting' : 'Start voice venting'}
+                    className="mic-button !h-9"
+                  >
+                    {listening ? <MicOff size={15} /> : <Mic size={15} />}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || sending || aiThinking}
+                    className="primary-button px-4 py-2.5 text-xs"
+                  >
+                    <Send size={13} /> Send
+                  </button>
+                </form>
+                {voiceNote && <p className="mt-1.5 text-[11px] text-white/50">{voiceNote}</p>}
+              </>
+            ) : (
+              /* Guided Bot Branching Response Options */
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-medium tracking-wider text-white/50 uppercase">
+                  Choose next step:
+                </span>
+                {currentNode.options.map(opt => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => handleGuidedOptionClick(opt)}
+                    className="rounded-xl border border-[#8ec9bd]/40 bg-[#8ec9bd]/15 px-3 py-1.5 text-xs font-medium text-[#d4f2ea] transition hover:border-[#8ec9bd]/75 hover:bg-[#8ec9bd]/25"
+                  >
+                    <Compass size={12} className="mr-1.5 inline text-[#8ec9bd]" />
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* RIGHT SIDEBAR: USER-CONTROLLED MEMORY VAULT */}
+      <aside className={`${glass} flex h-[calc(100vh-130px)] min-h-[540px] max-h-[840px] flex-col justify-between p-4 sm:p-5`}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between gap-2">
+            <p className="eyebrow text-[#a4d1c8]">Memory Vault · User-Controlled</p>
+            <span className="rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/60">
+              {memories.length} {memories.length === 1 ? 'note' : 'notes'}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/45">
+            You decide what LUMINA remembers. Toggle AI sharing per memory or keep notes strictly
+            private.
+          </p>
+
+          {/* Master AI Memory Sharing Toggle */}
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.03] px-3 py-2">
+            <div>
+              <p className="text-xs font-medium text-white/85">Share approved memories with AI</p>
+              <p className="text-[10px] text-white/45">
+                {aiMemoryEnabled
+                  ? `${sharedCount} of ${memories.length} shared with companion`
+                  : 'AI memory sharing is paused'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiMemoryEnabled}
+              onClick={() => void setAiMemoryEnabled(!aiMemoryEnabled)}
+              className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
+                aiMemoryEnabled
+                  ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/35'
+                  : 'border-white/15 bg-white/10'
+              }`}
+            >
+              <span
+                className={`block h-4 w-4 rounded-full bg-white transition-transform ${
+                  aiMemoryEnabled ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Memory List */}
+          <ul className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
+            {memories.length === 0 && (
+              <li className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] p-4 text-center text-xs text-white/40">
+                Your Memory Vault is empty. Add an anchor, preference, trigger, or boundary below.
+              </li>
+            )}
+            {memories.map(m => {
+              const isEditing = editingMemId === m.id
+              const isShared = m.sharedWithAi !== false && aiMemoryEnabled
+              return (
+                <li
+                  key={m.id}
+                  className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5 transition hover:border-white/[0.15]"
+                >
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editMemText}
+                        onChange={e => setEditMemText(e.target.value)}
+                        maxLength={220}
+                        rows={2}
+                        className="w-full rounded-xl border border-white/15 bg-[#0c0a16] px-2.5 py-1.5 text-xs text-white focus:border-[#8ec9bd] focus:outline-none"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <select
+                          value={editMemCat}
+                          onChange={e => setEditMemCat(e.target.value as MemoryCategory)}
+                          className="unlock-select !py-1 !text-[11px]"
                         >
-                          <Edit3 size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void removeMemory(m.id)}
-                          aria-label="Delete memory"
-                          className="text-white/40 hover:text-[#edb4c5]"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                          {MEMORY_CATEGORIES.map(c => (
+                            <option key={c.value} value={c.value}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void editMemory(m.id, editMemText, editMemCat)
+                              setEditingMemId(null)
+                            }}
+                            className="secondary-button !px-2.5 !py-1 !text-[11px] text-[#8ec9bd]"
+                          >
+                            <Check size={12} /> Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingMemId(null)}
+                            className="secondary-button !px-2 !py-1 !text-[11px]"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-white/75">{m.text}</p>
-                  </>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span className="eyebrow rounded-full border border-white/[0.09] bg-white/[0.04] px-2 py-0.5 text-[9px] text-[#a4d1c8]">
+                          {m.category} · {shortDate(m.createdAt)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void toggleMemoryShare(m.id)}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition ${
+                              isShared
+                                ? 'border-[#8ec9bd]/35 bg-[#8ec9bd]/12 text-[#b7ebe0]'
+                                : 'border-white/10 bg-white/[0.04] text-white/45'
+                            }`}
+                          >
+                            {m.sharedWithAi === false ? (
+                              <>
+                                <EyeOff size={10} /> Private
+                              </>
+                            ) : (
+                              <>
+                                <Eye size={10} /> Shared
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingMemId(m.id)
+                              setEditMemText(m.text)
+                              setEditMemCat(m.category)
+                            }}
+                            aria-label="Edit memory"
+                            className="text-white/40 hover:text-white/85"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removeMemory(m.id)}
+                            aria-label="Delete memory"
+                            className="text-white/40 hover:text-[#edb4c5]"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-1.5 text-xs leading-relaxed text-white/75">{m.text}</p>
+                    </>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
 
         {/* Add Memory Form */}
         <form
-          className="mt-4 grid gap-2 border-t border-white/[0.08] pt-3.5"
+          className="mt-3 grid gap-2 border-t border-white/[0.08] pt-3"
           onSubmit={e => {
             e.preventDefault()
             if (!memText.trim()) return
@@ -1181,7 +1611,7 @@ function CompanionContent() {
           }}
         >
           <input
-            className="modal-input !text-xs"
+            className="modal-input !py-2 !text-xs"
             value={memText}
             onChange={e => setMemText(e.target.value)}
             placeholder="Add a personal anchor, trigger, or preference…"
@@ -1191,7 +1621,7 @@ function CompanionContent() {
             <select
               value={memCat}
               onChange={e => setMemCat(e.target.value as MemoryCategory)}
-              className="unlock-select flex-1"
+              className="unlock-select flex-1 !py-1.5"
               aria-label="Memory category"
             >
               {MEMORY_CATEGORIES.map(c => (
@@ -1203,7 +1633,7 @@ function CompanionContent() {
             <button
               type="submit"
               disabled={!memText.trim()}
-              className="secondary-button px-3 py-2 text-xs"
+              className="secondary-button px-3 py-1.5 text-xs"
             >
               <Plus size={13} /> Add
             </button>
@@ -1219,7 +1649,7 @@ function CompanionContent() {
 
 export default function Page() {
   return (
-    <AppShell title="Soul Companion" subtitle="AI listener, guided bot & memory vault">
+    <AppShell title="Soul Companion" subtitle="Live reactive AI listener, guided bot & memory vault">
       <CompanionContent />
     </AppShell>
   )

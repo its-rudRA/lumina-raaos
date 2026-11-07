@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -24,7 +24,9 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { AnimeSkyWorld } from '@/components/animation-system'
 import { LuminaLoader } from '@/components/lumina-loader'
+import { LuminaLogoIntro, PortalAwakeningOverlay } from '@/components/sanctuary-cinematics'
 import { BreathPacerModal, SupportModal } from '@/components/support-modals'
 import { useSanctuary, type SensoryMode } from '@/context/sanctuary-context'
 import { resolveEntryRoute } from '@/lib/routing'
@@ -40,6 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/home', label: 'Home', subtitle: 'Sanctuary gateway', icon: House },
   { href: '/garden', label: 'Inner Garden', subtitle: '3D living world', icon: Flower2 },
   { href: '/check-in', label: 'Emotional Check-In', subtitle: 'Compass & aura', icon: Compass },
+  { href: '/emojis', label: 'Emoji Sanctuary', subtitle: 'Alchemy & mood canvas', icon: Sparkles },
   { href: '/companion', label: 'Soul Companion', subtitle: 'AI listener & coach', icon: MessageCircleHeart },
   { href: '/calm-studio', label: 'Calm Studio', subtitle: 'Rain & somatic breath', icon: Wind },
   { href: '/release-room', label: 'Release Room', subtitle: 'Burn & star jar', icon: Flame },
@@ -47,6 +50,19 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/journey', label: 'My Journey', subtitle: '30-day gentle path', icon: RouteIcon },
   { href: '/settings', label: 'Profile & Settings', subtitle: 'Privacy & preferences', icon: Settings },
 ]
+
+const ROOM_AURORA_COLORS: Record<string, string> = {
+  '/home': 'linear-gradient(90deg, transparent, rgba(126,200,184,0.55), rgba(232,164,184,0.45), transparent)',
+  '/garden': 'linear-gradient(90deg, transparent, rgba(126,200,184,0.7), rgba(243,217,164,0.5), transparent)',
+  '/check-in': 'linear-gradient(90deg, transparent, rgba(232,164,184,0.65), rgba(184,164,232,0.5), transparent)',
+  '/emojis': 'linear-gradient(90deg, transparent, rgba(243,217,164,0.7), rgba(232,164,184,0.6), rgba(126,200,184,0.6), transparent)',
+  '/companion': 'linear-gradient(90deg, transparent, rgba(184,164,232,0.68), rgba(126,200,184,0.52), transparent)',
+  '/calm-studio': 'linear-gradient(90deg, transparent, rgba(126,184,200,0.65), rgba(145,202,190,0.55), transparent)',
+  '/release-room': 'linear-gradient(90deg, transparent, rgba(224,138,126,0.65), rgba(243,217,164,0.55), transparent)',
+  '/insights': 'linear-gradient(90deg, transparent, rgba(184,164,232,0.65), rgba(232,164,184,0.5), transparent)',
+  '/journey': 'linear-gradient(90deg, transparent, rgba(243,217,164,0.65), rgba(126,200,184,0.5), transparent)',
+  '/settings': 'linear-gradient(90deg, transparent, rgba(143,160,181,0.55), rgba(126,200,184,0.45), transparent)',
+}
 
 const PRIMARY_MOBILE = NAV_ITEMS.slice(0, 4)
 const MORE_MOBILE = NAV_ITEMS.slice(4)
@@ -99,18 +115,20 @@ export function AppShell({
   const [moreOpen, setMoreOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
   const [breathOpen, setBreathOpen] = useState(false)
-  const didRedirectRef = useRef(false)
+  const [replayLogoIntro, setReplayLogoIntro] = useState(false)
 
   const ready = isHydrated && !isLoading
 
-  // Auth guard (never redirects while data is still hydrating, and only redirects once if needed).
+  // Auth guard (never redirects while data is still hydrating).
   useEffect(() => {
-    if (!ready || didRedirectRef.current) return
-    if (!authUser && pathname !== '/welcome') {
-      didRedirectRef.current = true
-      router.replace('/welcome')
+    if (!ready) return
+    if (!authUser) {
+      const target = resolveEntryRoute(authUser, onboarding)
+      if (target && target !== pathname) {
+        router.replace(target)
+      }
     }
-  }, [ready, authUser, pathname, router])
+  }, [ready, authUser, onboarding, pathname, router])
 
   // Any on-device crisis detection opens the support modal automatically.
   useEffect(() => {
@@ -134,12 +152,21 @@ export function AppShell({
   const displayName = name.trim().split(/\s+/)[0] || authUser?.name || 'Friend'
   const isGuest = authUser?.mode === 'guest'
   const moreActive = MORE_MOBILE.some(i => isActive(pathname, i.href))
+  const activeSweepGradient =
+    ROOM_AURORA_COLORS[pathname] || ROOM_AURORA_COLORS['/home']
 
   return (
     <div
-      className={`relative min-h-screen text-[#eeeaf3] ${sensoryMode === 'gentle' ? 'gentle-mode' : ''}`}
+      className={`relative flex min-h-screen w-full text-[#eeeaf3] ${sensoryMode === 'gentle' ? 'gentle-mode' : ''}`}
       data-sensory={sensoryMode}
     >
+      <LuminaLogoIntro
+        forceOpen={replayLogoIntro}
+        onClose={() => setReplayLogoIntro(false)}
+      />
+      <PortalAwakeningOverlay fallbackName={displayName} />
+      <AnimeSkyWorld intensity="subtle" />
+
       {sensoryMode !== 'low' && (
         <>
           <div className="aurora aurora-one" />
@@ -150,22 +177,35 @@ export function AppShell({
 
       {/* DESKTOP SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.07] bg-[#0a0c14]/85 backdrop-blur-2xl transition-[width] duration-300 lg:flex ${
-          collapsed ? 'w-[76px]' : 'w-[272px]'
-        }`}
+        style={{ width: collapsed ? '76px' : '272px' }}
+        className="fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.09] bg-[#0a0c14]/92 backdrop-blur-2xl transition-[width] duration-300 lg:flex"
         aria-label="Sanctuary navigation"
       >
-        <div className={`flex items-center gap-2.5 px-4 pt-4 pb-2.5 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="brand-mark shrink-0">
+        <button
+          type="button"
+          onClick={() => setReplayLogoIntro(true)}
+          title="Replay LUMINA Sanctuary Cinematic Intro"
+          className={`group flex items-center gap-2.5 px-4 pt-3.5 pb-2 text-left transition hover:opacity-95 ${
+            collapsed ? 'justify-center' : ''
+          }`}
+        >
+          <div className="brand-mark shrink-0 transition-transform duration-300 group-hover:scale-105 group-hover:shadow-[0_0_18px_rgba(243,217,164,0.45)]">
             <Sparkles size={15} />
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="font-serif text-base tracking-[0.2em] text-white">LUMINA</p>
-              <p className="text-[9px] uppercase tracking-[0.18em] text-white/40">your emotional sanctuary</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-serif text-base tracking-[0.22em] text-white">LUMINA</p>
+                <span className="rounded-full border border-[#f3d9a4]/30 bg-[#f3d9a4]/10 px-1.5 py-0.2 text-[7.5px] font-medium tracking-[0.14em] text-[#f3d9a4] uppercase">
+                  RaaOS Engine
+                </span>
+              </div>
+              <p className="truncate text-[9px] uppercase tracking-[0.16em] text-white/45 group-hover:text-[#8ec9bd]">
+                Emotional Sanctuary · by Rudra ✦
+              </p>
             </div>
           )}
-        </div>
+        </button>
 
         {!collapsed && (
           <div className="mx-3 mb-2 flex items-center gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-2.5 py-2">
@@ -197,14 +237,20 @@ export function AppShell({
                     prefetch={active ? false : undefined}
                     aria-current={active ? 'page' : undefined}
                     title={collapsed ? item.label : undefined}
-                    className={`group flex items-center gap-2.5 rounded-xl border px-3 py-1.5 transition ${
+                    className={`group relative flex items-center gap-2.5 overflow-hidden rounded-xl border px-3 py-1.5 transition-all duration-300 ${
                       collapsed ? 'justify-center' : ''
                     } ${
                       active
-                        ? 'border-[#e1acc1]/35 bg-gradient-to-r from-[#daa9c2]/15 to-[#8ec9bd]/10 text-white shadow-[0_0_24px_rgba(218,169,194,0.12)]'
-                        : 'border-transparent text-white/55 hover:bg-white/[0.05] hover:text-white'
+                        ? 'border-[#e1acc1]/45 bg-gradient-to-r from-[#daa9c2]/20 via-[#b8a4e8]/12 to-[#8ec9bd]/12 text-white shadow-[0_0_24px_rgba(218,169,194,0.16)]'
+                        : 'border-transparent text-white/55 hover:translate-x-0.5 hover:bg-white/[0.05] hover:text-white'
                     }`}
                   >
+                    {active && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-1.5 left-0 w-1 rounded-r-full bg-gradient-to-b from-[#f3d9a4] via-[#e8a4b8] to-[#7ec8b8] shadow-[0_0_10px_#e8a4b8]"
+                      />
+                    )}
                     <Icon size={16} strokeWidth={1.5} className={`shrink-0 ${active ? 'text-[#edb4c5]' : ''}`} />
                     {!collapsed && (
                       <span className="min-w-0 leading-tight">
@@ -268,27 +314,40 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* MAIN COLUMN */}
+      {/* PHYSICAL DESKTOP SIDEBAR SPACER — Guarantees main column NEVER slides under sidebar */}
       <div
-        className={`relative z-10 min-h-screen transition-[padding] duration-300 ${
-          collapsed ? 'lg:pl-[76px]' : 'lg:pl-[272px]'
-        }`}
-      >
-        <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-[#080b11]/80 px-4 pb-4 pt-6 backdrop-blur-xl sm:px-8 sm:pb-5 sm:pt-7">
+        aria-hidden="true"
+        style={{
+          width: collapsed ? '76px' : '272px',
+          minWidth: collapsed ? '76px' : '272px',
+        }}
+        className="hidden shrink-0 transition-[width,min-width] duration-300 lg:block"
+      />
+
+      {/* MAIN COLUMN */}
+      <div className="relative z-10 flex min-h-screen min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.09] bg-[#080a13]/88 px-4 pb-4 pt-6 backdrop-blur-xl sm:px-8 sm:pb-5 sm:pt-7">
           <div className="min-w-0">
             {title ? (
               <>
-                <h1 className="font-serif text-xl leading-snug text-white sm:text-2xl">{title}</h1>
-                {subtitle && <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>}
+                <h1 className="font-serif text-xl leading-snug text-white drop-shadow-[0_2px_10px_rgba(6,7,18,0.9)] sm:text-2xl">
+                  {title}
+                </h1>
+                {subtitle && <p className="mt-0.5 text-xs text-[#e6e1f4]/75">{subtitle}</p>}
               </>
             ) : (
-              <p className="hidden font-serif text-sm italic text-white/50 sm:block">
+              <p className="hidden font-serif text-sm italic text-[#e6e1f4]/75 sm:block">
                 You don&apos;t have to be happy to be worthy of peace.
               </p>
             )}
-            <span className="font-serif text-lg tracking-[0.2em] text-white lg:hidden">
+            <button
+              type="button"
+              onClick={() => setReplayLogoIntro(true)}
+              className="font-serif text-base tracking-[0.22em] text-white lg:hidden"
+              title="Replay LUMINA Cinematic Intro"
+            >
               {!title && 'LUMINA'}
-            </span>
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="mode-toggle" role="group" aria-label="Sensory setting">
@@ -314,7 +373,22 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="px-4 pb-28 pt-6 sm:px-8 sm:pt-7 lg:pb-14">{children}</main>
+        <main
+          key={pathname}
+          className="lumina-room-transition relative mx-auto w-full max-w-[1440px] flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-12"
+        >
+          {/* Ambient Room-Specific Aurora Sweep on Route Transition */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-8 top-0 h-[2px] rounded-full"
+            style={{
+              background: activeSweepGradient,
+              boxShadow: '0 0 22px rgba(126, 200, 184, 0.35)',
+              animation: 'luminaAuroraSweep 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            }}
+          />
+          {children}
+        </main>
       </div>
 
       {/* MOBILE BOTTOM NAV */}

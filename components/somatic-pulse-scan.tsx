@@ -226,19 +226,41 @@ export function SomaticPulseScan() {
   // Real telemetry series built strictly from user's recorded check-ins (no fabricated baseline points)
   const series = useMemo(() => {
     const recent = [...checkIns].slice(0, 7).reverse()
+    const dateCounts: Record<string, number> = {}
+    for (const r of recent) {
+      const d = shortDate(r.timestamp)
+      dateCounts[d] = (dateCounts[d] || 0) + 1
+    }
+
     return recent.map((record, idx) => {
       const val = Math.max(
         22,
         Math.min(94, Math.round(record.orb.x * 0.6 + (100 - record.orb.y) * 0.4))
       )
       const load = Math.max(18, Math.min(92, Math.round(record.orb.y * 0.65 + 15)))
-      const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(
-        new Date(record.timestamp)
-      )
+      const dt = new Date(record.timestamp)
+      const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(dt)
+      const baseDate = shortDate(record.timestamp)
+      const timeStr = new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+        .format(dt)
+        .replace(/\s+/g, '')
+        .toLowerCase()
+        .replace('am', 'a')
+        .replace('pm', 'p')
+
+      // If multiple check-ins happen on the same calendar date, show the distinct time on the X-axis
+      const axisLabel = dateCounts[baseDate] > 1 ? timeStr : baseDate
+      const fullLabel = `${baseDate} · ${timeStr}`
+
       return {
         key: `${record.id ?? record.timestamp}-${idx}`,
         day: weekday || WEEK_LABELS[idx % WEEK_LABELS.length],
-        dateLabel: shortDate(record.timestamp),
+        dateLabel: axisLabel,
+        fullDateLabel: fullLabel,
         auraLabel: record.emotionLabel || record.auraLabel,
         emoji: record.emoji,
         resonance: val,
@@ -634,10 +656,10 @@ export function SomaticPulseScan() {
                 type="button"
                 aria-pressed={bioRhythm.sleepQuality === q}
                 onClick={() => saveSleep({ sleepQuality: q })}
-                className={`rounded-xl border px-1.5 py-1.5 text-center text-[11px] font-medium whitespace-nowrap capitalize transition ${
+                className={`rounded-xl border px-1 py-1.5 text-center text-[10.5px] font-medium tracking-tight whitespace-nowrap capitalize transition ${
                   bioRhythm.sleepQuality === q
                     ? 'border-[#b8a4e8]/60 bg-[#b8a4e8]/20 text-white'
-                    : 'border-white/[0.08] bg-white/[0.03] text-white/50 hover:text-white'
+                    : 'border-white/[0.08] bg-white/[0.03] text-white/60 hover:text-white'
                 }`}
               >
                 {q}
@@ -756,7 +778,7 @@ export function SomaticPulseScan() {
               <div className="mt-1 flex items-center justify-between text-[11px] text-white/50">
                 {hoverPointIdx !== null && series[hoverPointIdx] ? (
                   <span className="text-[#7ec8b8]">
-                    {series[hoverPointIdx].day} ({series[hoverPointIdx].dateLabel}):{' '}
+                    {series[hoverPointIdx].day} ({series[hoverPointIdx].fullDateLabel}):{' '}
                     {series[hoverPointIdx].emoji ? `${series[hoverPointIdx].emoji} ` : ''}
                     {series[hoverPointIdx].auraLabel} · {series[hoverPointIdx].resonance}%
                   </span>

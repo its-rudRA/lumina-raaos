@@ -20,8 +20,10 @@ import {
   Sparkles,
   Wind,
 } from 'lucide-react'
+import { MagicalButton, TiltGlassCard } from '@/components/animation-system'
 import { AuthShell } from '@/components/auth-shell'
 import { LuminaLoader } from '@/components/lumina-loader'
+import { triggerPortalTransition } from '@/components/sanctuary-cinematics'
 import { deriveAura, useSanctuary, type Orb } from '@/context/sanctuary-context'
 
 // Three.js is loaded lazily on the client so the route itself renders instantly.
@@ -553,6 +555,7 @@ export default function TutorialPage() {
 
   async function finish() {
     setBusy(true)
+    triggerPortalTransition(authUser?.name || 'Friend')
     await updateOnboarding({ tutorialCompleted: true })
     router.push('/home')
   }
@@ -568,7 +571,7 @@ export default function TutorialPage() {
       <div className="w-full max-w-3xl">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <span className="eyebrow rounded-full border border-white/[0.1] bg-white/[0.04] px-3.5 py-1.5 text-[10px]">
+            <span className="eyebrow rounded-full border border-white/[0.1] bg-white/[0.04] px-3.5 py-1.5 text-[10px] text-[#f4d9e2]">
               STEP 3 OF 3 · INTERACTIVE SANCTUARY TOUR
             </span>
             <p className="mt-2 text-xs text-white/45">Step {step} of {TOTAL}</p>
@@ -582,13 +585,15 @@ export default function TutorialPage() {
         </div>
 
         <div className="meter mb-4" role="progressbar" aria-valuemin={1} aria-valuemax={TOTAL} aria-valuenow={step}>
-          <span style={{ width: `${(step / TOTAL) * 100}%`, transition: 'width .4s ease' }} />
+          <span style={{ width: `${(step / TOTAL) * 100}%`, transition: 'width 520ms cubic-bezier(0.16, 1, 0.3, 1)' }} />
         </div>
 
-        <div className={`${glass} p-6 sm:p-8`}>
-          <h1 className="font-serif text-3xl text-white sm:text-4xl">{current.title}</h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/55">{current.copy}</p>
-          <div className="mt-6">{current.body()}</div>
+        <TiltGlassCard className="p-6 sm:p-8" maxTiltDeg={2}>
+          <div key={step} className="lumina-stagger-item">
+            <h1 className="lumina-hero-title font-serif text-3xl text-white sm:text-4xl">{current.title}</h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/60">{current.copy}</p>
+            <div className="mt-6">{current.body()}</div>
+          </div>
 
           <div className="mt-8 flex items-center justify-between gap-3">
             {step > 1 ? (
@@ -599,17 +604,17 @@ export default function TutorialPage() {
               <span />
             )}
             {step < TOTAL ? (
-              <button onClick={() => setStep(s => s + 1)} className="primary-button px-6 py-3 text-sm">
-                Next <ArrowRight size={14} />
-              </button>
+              <MagicalButton variant="primary" onClick={() => setStep(s => s + 1)} className="px-6 py-3 text-sm">
+                <span>Next</span> <ArrowRight size={14} />
+              </MagicalButton>
             ) : (
-              <button onClick={finish} disabled={busy} className="primary-button px-7 py-3 text-sm">
+              <MagicalButton variant="primary" onClick={finish} disabled={busy} className="px-7 py-3 text-sm">
                 {busy && <Loader2 size={14} className="animate-spin" />}
-                Enter LUMINA <ArrowRight size={14} />
-              </button>
+                <span>Enter LUMINA</span> <ArrowRight size={14} />
+              </MagicalButton>
             )}
           </div>
-        </div>
+        </TiltGlassCard>
       </div>
     </AuthShell>
   )

@@ -207,48 +207,45 @@ function GardenContent() {
           sensoryMode={sensoryMode}
         />
 
-        {/* Top Floating HUD */}
-        <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex flex-col justify-between gap-2.5 sm:inset-x-6 sm:top-5 xl:flex-row xl:items-start">
-          {/* Top-Left HUD: Mode Switcher + Interactive Hint Badge */}
-          <div className="flex flex-col items-start gap-2">
-            <div className="pointer-events-auto tab-pill bg-[#0c0a16]/85 shadow-lg backdrop-blur-xl">
-              <button
-                onClick={() => {
-                  setTab('garden')
-                }}
-                className={tab === 'garden' ? 'active' : ''}
-              >
-                Living Garden ({total} blooms)
-              </button>
-              <button
-                onClick={() => {
-                  setTab('aura')
-                  setSelectedBloom(null)
-                  setIlluminatedLanternIdx(null)
-                }}
-                className={tab === 'aura' ? 'active' : ''}
-              >
-                Sculpt Aura Wisp
-              </button>
-            </div>
-
-            <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-[#0b0914]/75 px-3 py-1 text-[11px] text-white/65 backdrop-blur-xl">
-              <Compass size={12} className="text-[#8ec9bd]" />
-              <span>
-                {tab === 'garden'
-                  ? 'Drag to orbit camera · Scroll to zoom · Click any lotus or lantern'
-                  : 'Drag the luminous wisp across the pond to sculpt your emotional aura'}
-              </span>
-            </div>
+        {/* Compact Single-Row Top Perimeter HUD Bar (never obstructs 3D Sky Lanterns or Moon Gate) */}
+        <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-center justify-between gap-1.5 sm:inset-x-5">
+          {/* Left: Mode Switcher + Compact Hint */}
+          <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-full border border-white/[0.1] bg-[#0b0914]/65 px-2 py-1 backdrop-blur-md">
+            <button
+              onClick={() => setTab('garden')}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                tab === 'garden'
+                  ? 'bg-[#8ec9bd]/25 text-[#d7f7ef]'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Garden ({total})
+            </button>
+            <button
+              onClick={() => {
+                setTab('aura')
+                setSelectedBloom(null)
+                setIlluminatedLanternIdx(null)
+              }}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                tab === 'aura'
+                  ? 'bg-[#e8a4b8]/25 text-[#f4d9e2]'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Aura Wisp
+            </button>
+            <span className="hidden items-center gap-1 border-l border-white/10 pl-2 pr-1 text-[10px] text-white/50 2xl:inline-flex">
+              <Compass size={11} className="text-[#8ec9bd]" />
+              {tab === 'garden' ? 'Drag to orbit · Click lotus/lantern' : 'Drag wisp to sculpt'}
+            </span>
           </div>
 
-          {/* Top-Right HUD: Camera Angle Presets & Sanctuary Rituals */}
-          <div className="flex flex-col items-start gap-2 xl:items-end">
+          {/* Right: Camera Presets + Compact Ritual Pills in One Slim Bar */}
+          <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full border border-white/[0.1] bg-[#0b0914]/65 px-2 py-1 backdrop-blur-md">
             {tab === 'garden' && (
-              <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full border border-white/[0.11] bg-[#0c0a16]/80 p-1 backdrop-blur-xl">
-                <span className="flex items-center gap-1 px-2.5 text-[10px] tracking-[0.14em] text-white/45 uppercase">
-                  <Camera size={11} className="text-[#8ec9bd]" /> View
-                </span>
+              <div className="flex items-center gap-0.5 border-r border-white/10 pr-1.5">
+                <Camera size={11} className="mr-1 text-[#8ec9bd]" />
                 {CAMERA_PRESETS.map(preset => {
                   const active = cameraPreset === preset.id && !selectedBloom
                   return (
@@ -258,10 +255,10 @@ function GardenContent() {
                         setSelectedBloom(null)
                         setCameraPreset(preset.id)
                       }}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
                         active
-                          ? 'bg-[#8ec9bd]/20 text-[#b7ebe0] shadow-[0_0_12px_rgba(142,201,189,0.25)]'
-                          : 'text-white/60 hover:text-white/90'
+                          ? 'bg-[#8ec9bd]/20 text-[#b7ebe0]'
+                          : 'text-white/55 hover:text-white'
                       }`}
                     >
                       {preset.label}
@@ -271,48 +268,52 @@ function GardenContent() {
               </div>
             )}
 
-            <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={handleReleaseWishLantern}
-                className="support-button border-[#f3d9a4]/35 bg-[#0c0a16]/80 text-[#f7dfb2] backdrop-blur-xl hover:border-[#f3d9a4]/60"
-              >
-                <Flame size={13} className="text-[#f4b660]" /> Release Wish Lantern
-              </button>
-              <button
-                onClick={() => setIlluminatePulse(p => p + 1)}
-                className="support-button bg-[#0c0a16]/80 backdrop-blur-xl"
-              >
-                <Sparkles size={13} className="text-[#8ec9bd]" /> Illuminate Shrine
-              </button>
-              <button
-                onClick={toggleRain}
-                aria-pressed={rainPlaying}
-                className={`support-button bg-[#0c0a16]/80 backdrop-blur-xl ${
-                  rainPlaying ? 'border-[#91cabe]/50 text-[#a5d4ca]' : ''
-                }`}
-              >
-                <Droplets size={13} /> {rainPlaying ? 'Pause Rain' : '3:00 Rain'}
-              </button>
-              <button
-                onClick={() => setBreathActive(v => !v)}
-                aria-pressed={breathActive}
-                className={`support-button bg-[#0c0a16]/80 backdrop-blur-xl ${
-                  breathActive ? 'border-[#e8b8c7]/50 text-[#f4d9e2]' : ''
-                }`}
-              >
-                <Wind size={13} /> {breathActive ? 'Breathing (4s/6s)' : 'Breath Sync'}
-              </button>
-              <button
-                onClick={() => setImmersive(v => !v)}
-                className="support-button bg-[#0c0a16]/80 backdrop-blur-xl"
-                aria-label={immersive ? 'Standard view' : 'Full-Screen Mode'}
-              >
-                {immersive ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-                <span className="hidden sm:inline">
-                  {immersive ? 'Exit Full-Screen' : 'Full-Screen Mode'}
-                </span>
-              </button>
-            </div>
+            <button
+              onClick={handleReleaseWishLantern}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-[#f7dfb2] transition hover:bg-white/[0.08]"
+              title="Release a glowing sky lantern toward the Moon Gate"
+            >
+              <Flame size={12} className="text-[#f4b660]" />
+              <span>Wish Lantern</span>
+            </button>
+            <button
+              onClick={() => setIlluminatePulse(p => p + 1)}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-white/75 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              <Sparkles size={12} className="text-[#8ec9bd]" />
+              <span className="hidden sm:inline">Illuminate</span>
+            </button>
+            <button
+              onClick={toggleRain}
+              aria-pressed={rainPlaying}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition ${
+                rainPlaying
+                  ? 'bg-[#91cabe]/20 text-[#a5d4ca]'
+                  : 'text-white/75 hover:bg-white/[0.08] hover:text-white'
+              }`}
+            >
+              <Droplets size={12} />
+              <span>{rainPlaying ? 'Pause Rain' : 'Rain'}</span>
+            </button>
+            <button
+              onClick={() => setBreathActive(v => !v)}
+              aria-pressed={breathActive}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition ${
+                breathActive
+                  ? 'bg-[#e8b8c7]/20 text-[#f4d9e2]'
+                  : 'text-white/75 hover:bg-white/[0.08] hover:text-white'
+              }`}
+            >
+              <Wind size={12} />
+              <span className="hidden md:inline">{breathActive ? '4s/6s' : 'Breath'}</span>
+            </button>
+            <button
+              onClick={() => setImmersive(v => !v)}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-white/75 transition hover:bg-white/[0.08] hover:text-white"
+              aria-label={immersive ? 'Standard view' : 'Full-Screen Mode'}
+            >
+              {immersive ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+            </button>
           </div>
         </div>
 
@@ -575,52 +576,51 @@ function GardenContent() {
                 </div>
               )}
 
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="font-serif text-base text-white/95">
+              <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <p className="font-serif text-base text-white">
                     Your garden is not measured in streaks. It grows whenever you return.
                   </p>
-                  <p className="text-xs text-white/50">
+                  <p className="text-xs text-[#e6e1f4]/75">
                     {total} lotus blooms resting on the water · every emotion—bright or heavy—blooms
                     with dignity.
                   </p>
                 </div>
 
-                {/* Atmosphere Customizer Pills */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="mr-1 inline-flex items-center gap-1 text-[10px] tracking-[0.14em] text-white/45 uppercase">
-                    <Palette size={11} className="text-[#e7a9bd]" /> Atmosphere
-                  </span>
-                  {ATMOSPHERE_OPTIONS.map(opt => {
-                    const active = atmospherePreset === opt.id
-                    return (
-                      <button
-                        key={opt.id}
-                        onClick={() => setAtmospherePreset(opt.id)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                          active
-                            ? 'border-white/30 bg-white/[0.12] text-white shadow-sm'
-                            : 'border-white/[0.08] bg-white/[0.03] text-white/60 hover:text-white/90'
-                        }`}
-                      >
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{
-                            backgroundColor: opt.swatch,
-                            boxShadow: active ? `0 0 8px ${opt.swatch}` : undefined,
-                          }}
-                        />
-                        {opt.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                {/* Atmosphere Customizer Pills + Plant Seed Action */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 inline-flex items-center gap-1 text-[10px] tracking-[0.14em] text-[#e6e1f4]/70 uppercase">
+                      <Palette size={11} className="text-[#e7a9bd]" /> Atmosphere
+                    </span>
+                    {ATMOSPHERE_OPTIONS.map(opt => {
+                      const active = atmospherePreset === opt.id
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setAtmospherePreset(opt.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                            active
+                              ? 'border-white/35 bg-white/[0.15] text-white shadow-sm'
+                              : 'border-white/[0.1] bg-white/[0.04] text-white/75 hover:text-white'
+                          }`}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{
+                              backgroundColor: opt.swatch,
+                              boxShadow: active ? `0 0 8px ${opt.swatch}` : undefined,
+                            }}
+                          />
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
 
-                {/* Actions */}
-                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setShowSeedDrawer(v => !v)}
-                    className="primary-button px-3.5 py-2 text-xs"
+                    className="primary-button shrink-0 px-3.5 py-2 text-xs"
                   >
                     <Flower2 size={14} /> Plant New Check-In Seed
                   </button>

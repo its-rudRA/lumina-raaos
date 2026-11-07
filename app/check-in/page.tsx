@@ -540,9 +540,17 @@ function CheckInContent() {
 
         {/* 4A. Weekly 7-Day Emoji Timeline Strip */}
         <div>
-          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-medium text-white/75">
-            <Clock size={13} className="text-[#8ec9bd]" /> Last 7 Days Emoji Strip
-          </p>
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-white/75">
+              <Clock size={13} className="text-[#8ec9bd]" /> Last 7 Days Emoji Strip
+            </p>
+            <Link
+              href="/emojis"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#b8a4e8] hover:underline"
+            >
+              Open Emoji Alchemy &amp; Mood Studio →
+            </Link>
+          </div>
           <div className="grid grid-cols-7 gap-2">
             {weeklyDays.map(day => {
               const latest = day.records[0]
@@ -566,7 +574,13 @@ function CheckInContent() {
                     {day.dayName}
                   </span>
                   <span className="my-2 flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.08] bg-[#0b0914]/70 text-xl">
-                    {info ? info.emoji : <span className="text-xs text-white/20">·</span>}
+                    {info ? (
+                      info.emoji
+                    ) : (
+                      <span className="text-sm text-[#b8a4e8]/45" title="Rest day">
+                        ☽
+                      </span>
+                    )}
                   </span>
                   <span className="text-[11px] font-medium text-white/80">
                     {info ? info.label : `Day ${day.dayNum}`}

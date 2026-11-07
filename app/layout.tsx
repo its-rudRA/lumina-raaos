@@ -4,9 +4,10 @@ import { SanctuaryProvider } from '@/context/sanctuary-context'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'LUMINA — Your Personal Emotional Sanctuary',
-  description: 'A quiet place to return to yourself.',
-  generator: 'v0.app',
+  title: 'LUMINA — Bio-Adaptive Emotional Sanctuary · Powered by RaaOS Engine',
+  description:
+    'LUMINA · A bio-adaptive 3D emotional sanctuary, empathetic AI listener, and private somatic refuge powered by RaaOS Engine (Crafted by Rudra).',
+  generator: 'RaaOS Engine',
   icons: {
     icon: [
       {

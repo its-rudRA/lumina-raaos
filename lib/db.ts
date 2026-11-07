@@ -377,21 +377,39 @@ export async function signInLocalUser(email: string, password: string): Promise<
 }
 
 export async function continueAsGuestUser(): Promise<AuthUser> {
-  const existing = await loadSanctuaryState()
+  let existing: SanctuaryState | null = null
+  try {
+    existing = await Promise.race([
+      loadSanctuaryState(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 600)),
+    ])
+  } catch {
+    existing = null
+  }
   const authUser: AuthUser =
     existing?.authUser?.mode === 'guest'
       ? existing.authUser
       : {
           id: randomId('guest'),
-          name: 'Gentle Traveler',
+          name: existing?.name?.trim() || 'Gentle Traveler',
           email: '',
           mode: 'guest',
           createdAt: Date.now(),
         }
-  await patchSanctuaryState({
-    authUser,
-    onboarding: existing?.onboarding ?? { ...FRESH_ONBOARDING },
-  })
+  const guestOnboarding: OnboardingStatus = existing?.onboarding ?? {
+    ...FRESH_ONBOARDING,
+  }
+  try {
+    await Promise.race([
+      patchSanctuaryState({
+        authUser,
+        onboarding: guestOnboarding,
+      }),
+      new Promise<void>((resolve) => setTimeout(() => resolve(), 600)),
+    ])
+  } catch {
+    // Non-fatal: in-memory state in SanctuaryProvider will still hold the guest session
+  }
   return authUser
 }
 

@@ -1305,6 +1305,66 @@ export function SanctuaryScene({
     const particles = new THREE.Points(particleGeo, particleMat)
     scene.add(particles)
 
+    // 8b. 3D Drifting Cherry Blossom (Sakura) Petals & Concentric Water Ripples
+    const SAKURA_COUNT = 32
+    const sakuraGeo = trackGeo(createCuppedPetalGeometry(0.11, 0.065, 0.02))
+    const sakuraMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xf6c8d8,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+      })
+    )
+    const sakuraPetals: Array<{
+      mesh: THREE.Mesh
+      vx: number
+      vy: number
+      vz: number
+      rotSpeed: number
+      phase: number
+    }> = []
+    const sakuraGroup = new THREE.Group()
+    scene.add(sakuraGroup)
+
+    for (let i = 0; i < SAKURA_COUNT; i++) {
+      const m = new THREE.Mesh(sakuraGeo, sakuraMat)
+      m.position.set(
+        (Math.random() - 0.5) * 10,
+        -0.8 + Math.random() * 4.5,
+        (Math.random() - 0.5) * 8 - 1.2
+      )
+      sakuraGroup.add(m)
+      sakuraPetals.push({
+        mesh: m,
+        vx: -0.005 - (i % 4) * 0.0015,
+        vy: -0.0045 - (i % 3) * 0.0012,
+        vz: 0.002 * ((i % 3) - 1),
+        rotSpeed: 0.015 + (i % 5) * 0.005,
+        phase: i * 0.75,
+      })
+    }
+
+    // Concentric Animated Pond Ripples Radiating from the Moon Gate Island
+    const ambientRipples: Array<{ mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; offset: number }> = []
+    const ambRippleGeo = trackGeo(new THREE.RingGeometry(0.85, 0.91, 64))
+    ambRippleGeo.rotateX(-Math.PI / 2)
+    for (let r = 0; r < 3; r++) {
+      const mat = trackMat(
+        new THREE.MeshBasicMaterial({
+          color: r % 2 === 0 ? 0x8ec9bd : 0xe7a9bd,
+          transparent: true,
+          opacity: 0.18,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        })
+      )
+      const mesh = new THREE.Mesh(ambRippleGeo, mat)
+      mesh.position.set(0, -1.545, -1.6)
+      scene.add(mesh)
+      ambientRipples.push({ mesh, mat, offset: r / 3 })
+    }
+
     // 9. Burn & Release 3D Rising Ember Burst System
     const emberPositions = new Float32Array(EMBER_COUNT * 3)
     const emberVelocities = new Float32Array(EMBER_COUNT * 3)
@@ -1744,6 +1804,33 @@ export function SanctuaryScene({
       }
       pAttr.needsUpdate = true
       particleMat.opacity = isLowMotion ? 0.38 : 0.72
+
+      // Update 3D Drifting Sakura Petals & Concentric Pond Ripples
+      sakuraMat.opacity = isLowMotion ? 0.25 : 0.76
+      for (let i = 0; i < sakuraPetals.length; i++) {
+        const sp = sakuraPetals[i]
+        sp.mesh.position.x +=
+          (sp.vx + Math.sin(elapsed * 0.8 + sp.phase) * 0.0035) * motionScale
+        sp.mesh.position.y += sp.vy * motionScale
+        sp.mesh.position.z +=
+          (sp.vz + Math.cos(elapsed * 0.65 + sp.phase) * 0.002) * motionScale
+        sp.mesh.rotation.x += sp.rotSpeed * motionScale
+        sp.mesh.rotation.y += sp.rotSpeed * 0.8 * motionScale
+        sp.mesh.rotation.z = Math.sin(elapsed * 1.4 + sp.phase) * 0.45
+
+        if (sp.mesh.position.y < -1.52) {
+          sp.mesh.position.y = 3.6
+          sp.mesh.position.x = ((i * 37) % 10) - 5
+        }
+        if (sp.mesh.position.x < -5.5) sp.mesh.position.x = 5.5
+      }
+
+      for (let r = 0; r < ambientRipples.length; r++) {
+        const ar = ambientRipples[r]
+        const cyc = (elapsed * 0.22 * Math.max(0.25, motionScale) + ar.offset) % 1
+        ar.mesh.scale.setScalar(1 + cyc * 3.8)
+        ar.mat.opacity = (1 - cyc) * (isLowMotion ? 0.08 : 0.24)
+      }
 
       // Update Burn & Release 3D Rising Ember Burst
       if (state.emberTrigger) {
