@@ -632,7 +632,7 @@ export function SomaticPulseScan() {
                 type="button"
                 aria-pressed={bioRhythm.sleepQuality === q}
                 onClick={() => saveSleep({ sleepQuality: q })}
-                className={`rounded-xl border py-1.5 text-[11px] capitalize transition ${
+                className={`min-w-0 truncate rounded-xl border px-2 py-1.5 text-center text-[11px] font-medium leading-tight capitalize transition sm:text-xs ${
                   bioRhythm.sleepQuality === q
                     ? 'border-[#b8a4e8]/60 bg-[#b8a4e8]/20 text-white'
                     : 'border-white/[0.08] bg-white/[0.03] text-white/50 hover:text-white'

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { CheckInRecord } from '@/lib/db'
 
+export type GardenCameraPreset = 'overview' | 'moongate' | 'pond' | 'canopy'
+export type GardenAtmospherePreset = 'twilight' | 'rose' | 'celestial' | 'dawn'
+
 export interface SanctuarySceneProps {
   tab: 'aura' | 'garden'
   orb: { x: number; y: number }
@@ -18,6 +21,10 @@ export interface SanctuarySceneProps {
   onSelectBloom?: (bloom: CheckInRecord | null) => void
   releaseBurstCount?: number
   illuminatePulse?: number
+  cameraPreset?: GardenCameraPreset
+  atmospherePreset?: GardenAtmospherePreset
+  wishLanternCount?: number
+  onLanternClick?: (index: number) => void
 }
 
 const MAX_LOTUSES = 24
@@ -215,6 +222,66 @@ function getBreathFactor(elapsed: number): number {
   return 0.5 + 0.5 * Math.cos(t * Math.PI)
 }
 
+const ATMOSPHERE_PALETTES: Record<
+  GardenAtmospherePreset,
+  {
+    skyHex: number
+    fogHex: number
+    waterEmissiveHex: number
+    portalHex: number
+    auroraHex: string
+  }
+> = {
+  twilight: {
+    skyHex: 0x8ec9bd,
+    fogHex: 0x090814,
+    waterEmissiveHex: 0x091722,
+    portalHex: 0x8ec9bd,
+    auroraHex: '#7ec8b8',
+  },
+  rose: {
+    skyHex: 0xe7a9bd,
+    fogHex: 0x120916,
+    waterEmissiveHex: 0x1d0e1d,
+    portalHex: 0xe7a9bd,
+    auroraHex: '#e8a4b8',
+  },
+  celestial: {
+    skyHex: 0xb8a4e8,
+    fogHex: 0x090718,
+    waterEmissiveHex: 0x110e29,
+    portalHex: 0xb8a4e8,
+    auroraHex: '#b8a4e8',
+  },
+  dawn: {
+    skyHex: 0xf3d9a4,
+    fogHex: 0x120d12,
+    waterEmissiveHex: 0x1f1712,
+    portalHex: 0xf3d9a4,
+    auroraHex: '#f3d9a4',
+  },
+}
+
+/**
+ * Gently curved, tapered Asian sky lantern shade geometry.
+ */
+function createSkyLanternShadeGeometry(): THREE.BufferGeometry {
+  const geo = new THREE.CylinderGeometry(0.095, 0.125, 0.25, 20, 8, false)
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i)
+    const vy = pos.getY(i)
+    const vz = pos.getZ(i)
+    // Normalized height [-1 .. 1]
+    const ny = vy / 0.125
+    // Gentle organic barrel curve that swells softly in the upper-middle section
+    const belly = 1 + Math.cos(ny * Math.PI * 0.48) * 0.22 + (ny > 0 ? ny * 0.06 : 0)
+    pos.setXYZ(i, vx * belly, vy, vz * belly)
+  }
+  geo.computeVertexNormals()
+  return geo
+}
+
 export function SanctuaryScene({
   tab,
   orb,
@@ -229,10 +296,16 @@ export function SanctuaryScene({
   onSelectBloom,
   releaseBurstCount = 0,
   illuminatePulse = 0,
+  cameraPreset = 'overview',
+  atmospherePreset = 'twilight',
+  wishLanternCount = 0,
+  onLanternClick,
 }: SanctuarySceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredBloomIndex, setHoveredBloomIndex] = useState<number | null>(null)
+  const [hoveredLanternIndex, setHoveredLanternIndex] = useState<number | null>(null)
   const [selectedBloomIndex, setSelectedBloomIndex] = useState<number | null>(null)
+  const [isDraggingOrbit, setIsDraggingOrbit] = useState(false)
 
   const liveRef = useRef({
     tab,
@@ -243,12 +316,22 @@ export function SanctuaryScene({
     rainPlaying,
     immersive,
     breathActive,
+    cameraPreset,
+    atmospherePreset,
     pointerParallax: { x: 0, y: 0 },
+    orbitTheta: 0,
+    orbitPhi: 0.22,
+    orbitRadius: 6.6,
+    userOrbited: false,
+    dragDistance: 0,
     hoveredIndex: null as number | null,
+    hoveredLantern: null as number | null,
     selectedIndex: null as number | null,
     emberTrigger: false,
     illuminateTrigger: false,
+    wishTrigger: false,
     onSelectBloom,
+    onLanternClick,
   })
 
   useEffect(() => {
@@ -260,12 +343,48 @@ export function SanctuaryScene({
     liveRef.current.rainPlaying = rainPlaying
     liveRef.current.immersive = immersive
     liveRef.current.breathActive = breathActive
+    liveRef.current.atmospherePreset = atmospherePreset
     liveRef.current.onSelectBloom = onSelectBloom
+    liveRef.current.onLanternClick = onLanternClick
     if (tab === 'aura') {
       liveRef.current.selectedIndex = null
       setSelectedBloomIndex(null)
     }
-  }, [tab, orb, aura.color, blooms, checkIns, rainPlaying, immersive, breathActive, onSelectBloom])
+  }, [
+    tab,
+    orb,
+    aura.color,
+    blooms,
+    checkIns,
+    rainPlaying,
+    immersive,
+    breathActive,
+    atmospherePreset,
+    onSelectBloom,
+    onLanternClick,
+  ])
+
+  useEffect(() => {
+    liveRef.current.cameraPreset = cameraPreset
+    liveRef.current.userOrbited = false
+    if (cameraPreset === 'overview') {
+      liveRef.current.orbitTheta = 0
+      liveRef.current.orbitPhi = 0.22
+      liveRef.current.orbitRadius = immersive ? 6.3 : 6.7
+    } else if (cameraPreset === 'moongate') {
+      liveRef.current.orbitTheta = 0
+      liveRef.current.orbitPhi = 0.16
+      liveRef.current.orbitRadius = 4.3
+    } else if (cameraPreset === 'pond') {
+      liveRef.current.orbitTheta = 0.18
+      liveRef.current.orbitPhi = 0.09
+      liveRef.current.orbitRadius = 4.8
+    } else if (cameraPreset === 'canopy') {
+      liveRef.current.orbitTheta = -0.15
+      liveRef.current.orbitPhi = 0.07
+      liveRef.current.orbitRadius = 6.2
+    }
+  }, [cameraPreset, immersive])
 
   useEffect(() => {
     if (selectedBloom === null) {
@@ -289,6 +408,14 @@ export function SanctuaryScene({
       prevIlluminateRef.current = illuminatePulse
     }
   }, [illuminatePulse])
+
+  const prevWishRef = useRef(wishLanternCount)
+  useEffect(() => {
+    if (wishLanternCount > prevWishRef.current) {
+      liveRef.current.wishTrigger = true
+      prevWishRef.current = wishLanternCount
+    }
+  }, [wishLanternCount])
 
   useEffect(() => {
     const container = containerRef.current
@@ -340,24 +467,24 @@ export function SanctuaryScene({
     const roseGlowTex = trackTex(createGlowTexture('#e7a9bd'))
     const tealGlowTex = trackTex(createGlowTexture('#8ec9bd'))
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0x28223d, 1.35)
+    // Lights — brighter bioluminescent sanctuary clarity
+    const ambientLight = new THREE.AmbientLight(0x312a4a, 1.65)
     scene.add(ambientLight)
 
-    const hemiLight = new THREE.HemisphereLight(0x8ec9bd, 0x0d0917, 0.85)
+    const hemiLight = new THREE.HemisphereLight(0x96d7cb, 0x0f0b1c, 1.25)
     scene.add(hemiLight)
 
     const auraLight = new THREE.PointLight(
       new THREE.Color(liveRef.current.auraColor),
-      3.8,
-      16,
-      1.4
+      4.2,
+      18,
+      1.35
     )
     auraLight.position.set(0, 0.5, 1.2)
     scene.add(auraLight)
 
-    const moonGateLight = new THREE.PointLight(0x8ec9bd, 2.2, 12, 1.5)
-    moonGateLight.position.set(0, 0.2, -5.0)
+    const moonGateLight = new THREE.PointLight(0x9ee0d2, 3.2, 16, 1.35)
+    moonGateLight.position.set(0, 0.35, -4.8)
     scene.add(moonGateLight)
 
     // 2. Custom GLSL Aurora Borealis Sky Curtain & Starfield Dome
@@ -473,14 +600,14 @@ export function SanctuaryScene({
     isletGroup.add(isletMesh)
 
     // Soft shoreline ring
-    const shoreRingGeo = trackGeo(new THREE.RingGeometry(2.9, 3.05, 64))
+    const shoreRingGeo = trackGeo(new THREE.RingGeometry(2.9, 3.08, 64))
     shoreRingGeo.rotateX(-Math.PI / 2)
     shoreRingGeo.scale(1.06, 0.72, 1)
     const shoreRingMat = trackMat(
       new THREE.MeshBasicMaterial({
-        color: 0x8ec9bd,
+        color: 0x9ee0d2,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.28,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       })
@@ -489,18 +616,49 @@ export function SanctuaryScene({
     shoreRing.position.y = 0.06
     isletGroup.add(shoreRing)
 
-    // Luminous Zen Moon Gate Archway (TorusGeometry(1.35, 0.06, 20, 80))
+    // Luminous Water Reflection Path leading from foreground pond to Moon Gate island
+    const reflectionPathGeo = trackGeo(new THREE.PlaneGeometry(1.85, 6.2, 16, 24))
+    reflectionPathGeo.rotateX(-Math.PI / 2)
+    const reflectionPathPos = reflectionPathGeo.attributes.position as THREE.BufferAttribute
+    const reflectionPathColors = new Float32Array(reflectionPathPos.count * 3)
+    const cRefBase = new THREE.Color(0x9ee0d2)
+    for (let i = 0; i < reflectionPathPos.count; i++) {
+      const rx = reflectionPathPos.getX(i)
+      const rz = reflectionPathPos.getZ(i)
+      const edgeFade = Math.max(0, 1 - Math.pow(Math.abs(rx) / 0.92, 1.6))
+      const lengthFade = Math.max(0, 1 - Math.pow(Math.abs(rz) / 3.1, 1.8))
+      const intensity = edgeFade * lengthFade
+      reflectionPathColors[i * 3] = cRefBase.r * intensity
+      reflectionPathColors[i * 3 + 1] = cRefBase.g * intensity
+      reflectionPathColors[i * 3 + 2] = cRefBase.b * intensity
+    }
+    reflectionPathGeo.setAttribute('color', new THREE.BufferAttribute(reflectionPathColors, 3))
+    const reflectionPathMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.24,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    )
+    const reflectionPath = new THREE.Mesh(reflectionPathGeo, reflectionPathMat)
+    reflectionPath.position.set(0, -1.56, -2.1)
+    scene.add(reflectionPath)
+
+    // Luminous Zen Moon Gate Archway (TorusGeometry(1.38, 0.065, 24, 96))
     const moonGateGroup = new THREE.Group()
-    moonGateGroup.position.set(0, 1.38, 0)
+    moonGateGroup.position.set(0, 1.42, 0)
     isletGroup.add(moonGateGroup)
 
-    const moonArchGeo = trackGeo(new THREE.TorusGeometry(1.35, 0.055, 20, 80))
+    const moonArchGeo = trackGeo(new THREE.TorusGeometry(1.38, 0.065, 24, 96))
     const moonArchMat = trackMat(
       new THREE.MeshStandardMaterial({
-        color: 0xd9cfe8,
-        emissive: 0x8ec9bd,
-        emissiveIntensity: 0.42,
-        roughness: 0.25,
+        color: 0xefe9fa,
+        emissive: 0x9ee0d2,
+        emissiveIntensity: 0.72,
+        roughness: 0.2,
         metalness: 0.55,
       })
     )
@@ -508,12 +666,12 @@ export function SanctuaryScene({
     moonGateGroup.add(moonArch)
 
     // Inner filigree concentric ring inside Moon Gate
-    const innerArchGeo = trackGeo(new THREE.TorusGeometry(1.22, 0.012, 12, 72))
+    const innerArchGeo = trackGeo(new THREE.TorusGeometry(1.24, 0.016, 14, 80))
     const innerArchMat = trackMat(
       new THREE.MeshBasicMaterial({
-        color: 0xe7a9bd,
+        color: 0xf2bfd0,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.56,
         blending: THREE.AdditiveBlending,
       })
     )
@@ -521,12 +679,12 @@ export function SanctuaryScene({
     moonGateGroup.add(innerArch)
 
     // Translucent portal mist disc inside the Moon Gate
-    const portalDiscGeo = trackGeo(new THREE.CircleGeometry(1.22, 48))
+    const portalDiscGeo = trackGeo(new THREE.CircleGeometry(1.24, 56))
     const portalDiscMat = trackMat(
       new THREE.MeshBasicMaterial({
-        color: 0x8ec9bd,
+        color: 0x9ee0d2,
         transparent: true,
-        opacity: 0.055,
+        opacity: 0.11,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         depthWrite: false,
@@ -884,74 +1042,175 @@ export function SanctuaryScene({
       })
     }
 
-    // 7. Delicate Warm Cylindrical Sky Lanterns (CylinderGeometry(0.07, 0.09, 0.18, 16) + subtle 0.35 halo)
-    const lanternBodyGeo = trackGeo(new THREE.CylinderGeometry(0.07, 0.09, 0.18, 16))
-    const lanternCapGeo = trackGeo(new THREE.CylinderGeometry(0.075, 0.075, 0.018, 16))
-    const lanternBodyMat = trackMat(
+    // 7. Sculpted Multi-Part 3D Floating Sky Lanterns + Rising Wish Lantern
+    const lanternShadeGeo = trackGeo(createSkyLanternShadeGeometry())
+    const lanternTopRingGeo = trackGeo(new THREE.TorusGeometry(0.095, 0.01, 10, 28))
+    lanternTopRingGeo.rotateX(Math.PI / 2)
+    const lanternBottomRingGeo = trackGeo(new THREE.TorusGeometry(0.118, 0.012, 10, 28))
+    lanternBottomRingGeo.rotateX(Math.PI / 2)
+    const lanternCrownCapGeo = trackGeo(new THREE.CylinderGeometry(0.055, 0.095, 0.032, 18))
+    const lanternFlameGeo = trackGeo(new THREE.SphereGeometry(0.038, 12, 12))
+    const lanternTasselGeo = trackGeo(new THREE.CylinderGeometry(0.004, 0.01, 0.16, 8))
+    const lanternHitGeo = trackGeo(new THREE.SphereGeometry(0.38, 10, 10))
+
+    const lanternRimMat = trackMat(
       new THREE.MeshStandardMaterial({
-        color: 0xf7dca6,
-        emissive: 0xe6a856,
-        emissiveIntensity: 0.85,
-        roughness: 0.35,
+        color: 0x3b2a34,
+        emissive: 0x24161a,
+        emissiveIntensity: 0.35,
+        roughness: 0.55,
+        metalness: 0.45,
       })
     )
-    const lanternCapMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: 0x2b2030,
-        roughness: 0.7,
+    const lanternFlameMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xfff6d8,
+      })
+    )
+    const lanternTasselMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xe6b873,
+        transparent: true,
+        opacity: 0.75,
       })
     )
 
     interface LanternEntry {
+      index: number
       group: THREE.Group
+      shadeMat: THREE.MeshStandardMaterial
+      haloMat: THREE.SpriteMaterial
       haloSprite: THREE.Sprite
+      hitMesh: THREE.Mesh
       baseX: number
       baseY: number
       baseZ: number
       phase: number
+      boostLife: number
+      riseOffset: number
     }
+
     const lanterns: LanternEntry[] = []
+    const lanternHitMeshes: THREE.Mesh[] = []
+
+    const buildLanternParts = (
+      targetGroup: THREE.Group,
+      shadeMat: THREE.MeshStandardMaterial,
+      haloMat: THREE.SpriteMaterial
+    ) => {
+      const shade = new THREE.Mesh(lanternShadeGeo, shadeMat)
+      targetGroup.add(shade)
+
+      const topRing = new THREE.Mesh(lanternTopRingGeo, lanternRimMat)
+      topRing.position.y = 0.125
+      targetGroup.add(topRing)
+
+      const crownCap = new THREE.Mesh(lanternCrownCapGeo, lanternRimMat)
+      crownCap.position.y = 0.142
+      targetGroup.add(crownCap)
+
+      const bottomRing = new THREE.Mesh(lanternBottomRingGeo, lanternRimMat)
+      bottomRing.position.y = -0.125
+      targetGroup.add(bottomRing)
+
+      const flameCore = new THREE.Mesh(lanternFlameGeo, lanternFlameMat)
+      flameCore.position.y = -0.03
+      targetGroup.add(flameCore)
+
+      const tassel = new THREE.Mesh(lanternTasselGeo, lanternTasselMat)
+      tassel.position.y = -0.21
+      targetGroup.add(tassel)
+
+      const haloSprite = new THREE.Sprite(haloMat)
+      haloSprite.scale.set(0.82, 0.82, 1)
+      targetGroup.add(haloSprite)
+      return haloSprite
+    }
+
     for (let i = 0; i < LANTERN_COUNT; i++) {
       const lGroup = new THREE.Group()
 
-      const body = new THREE.Mesh(lanternBodyGeo, lanternBodyMat)
-      lGroup.add(body)
-
-      const topCap = new THREE.Mesh(lanternCapGeo, lanternCapMat)
-      topCap.position.y = 0.095
-      lGroup.add(topCap)
+      const shadeMat = trackMat(
+        new THREE.MeshStandardMaterial({
+          color: 0xffefc4,
+          emissive: 0xf4a842,
+          emissiveIntensity: 1.05,
+          roughness: 0.28,
+          metalness: 0.08,
+          transparent: true,
+          opacity: 0.94,
+        })
+      )
 
       const haloMat = trackMat(
         new THREE.SpriteMaterial({
           map: goldGlowTex,
-          color: 0xe6c88d,
+          color: 0xf7cf86,
           transparent: true,
-          opacity: 0.35,
+          opacity: 0.44,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
         })
       )
-      const haloSprite = new THREE.Sprite(haloMat)
-      haloSprite.scale.set(0.68, 0.68, 1)
-      lGroup.add(haloSprite)
+
+      const haloSprite = buildLanternParts(lGroup, shadeMat, haloMat)
+
+      const lHit = new THREE.Mesh(lanternHitGeo, hitSphereMat)
+      lHit.userData = { lanternIndex: i }
+      lGroup.add(lHit)
+      lanternHitMeshes.push(lHit)
 
       const angle = (i / LANTERN_COUNT) * Math.PI * 2 + 0.4
-      const radius = 3.2 + (i % 3) * 1.2
+      const radius = 3.1 + (i % 3) * 1.15
       const baseX = Math.cos(angle) * radius
-      const baseY = 0.65 + (i % 4) * 0.42
-      const baseZ = Math.sin(angle) * radius - 1.6
+      const baseY = 0.72 + (i % 4) * 0.44
+      const baseZ = Math.sin(angle) * radius - 1.65
 
       lGroup.position.set(baseX, baseY, baseZ)
       scene.add(lGroup)
       lanterns.push({
+        index: i,
         group: lGroup,
+        shadeMat,
+        haloMat,
         haloSprite,
+        hitMesh: lHit,
         baseX,
         baseY,
         baseZ,
         phase: i * 1.13,
+        boostLife: 0,
+        riseOffset: 0,
       })
     }
+
+    // Dedicated Rising Wish Lantern (launched from pond surface toward the Moon Gate & stars)
+    const wishLanternGroup = new THREE.Group()
+    const wishShadeMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: 0xfff5d6,
+        emissive: 0xffb84d,
+        emissiveIntensity: 1.45,
+        roughness: 0.22,
+        transparent: true,
+        opacity: 0,
+      })
+    )
+    const wishHaloMat = trackMat(
+      new THREE.SpriteMaterial({
+        map: goldGlowTex,
+        color: 0xffe09e,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    )
+    const wishHaloSprite = buildLanternParts(wishLanternGroup, wishShadeMat, wishHaloMat)
+    wishLanternGroup.scale.setScalar(1.22)
+    wishLanternGroup.visible = false
+    scene.add(wishLanternGroup)
+    let wishLanternLife = 0
 
     // 8. Bioluminescent Firefly / Rain Starlight Particles
     const particlePositions = new Float32Array(PARTICLE_COUNT * 3)
@@ -1018,13 +1277,18 @@ export function SanctuaryScene({
     const emberPoints = new THREE.Points(emberGeo, emberMat)
     scene.add(emberPoints)
 
-    const triggerEmberBurst = () => {
+    const triggerEmberBurst = (originX = 0, originY = -1.35, originZ = 0) => {
       emberLife = 1.0
       const ePos = emberGeo.attributes.position as THREE.BufferAttribute
       for (let i = 0; i < EMBER_COUNT; i++) {
         const angle = Math.random() * Math.PI * 2
-        const rad = Math.random() * 1.6
-        ePos.setXYZ(i, Math.cos(angle) * rad, -1.35 + Math.random() * 0.35, Math.sin(angle) * rad)
+        const rad = Math.random() * 1.4
+        ePos.setXYZ(
+          i,
+          originX + Math.cos(angle) * rad,
+          originY + Math.random() * 0.35,
+          originZ + Math.sin(angle) * rad
+        )
         emberVelocities[i * 3] = (Math.random() - 0.5) * 0.022
         emberVelocities[i * 3 + 1] = 0.03 + Math.random() * 0.042
         emberVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.022
@@ -1049,11 +1313,14 @@ export function SanctuaryScene({
     scene.add(shockwaveRing)
     let illuminateLife = 0
 
-    // Raycaster for hovering and clicking 3D Lotus Memories
+    // Raycaster for hovering and clicking BOTH 3D Lotus Memories AND 3D Sky Lanterns
     const raycaster = new THREE.Raycaster()
     const pointerNDC = new THREE.Vector2()
 
-    const getIntersectedLotusIndex = (clientX: number, clientY: number): number | null => {
+    const getIntersectedGardenTarget = (
+      clientX: number,
+      clientY: number
+    ): { bloomIndex: number | null; lanternIndex: number | null } => {
       const rect = renderer.domElement.getBoundingClientRect()
       pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1
       pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1
@@ -1061,30 +1328,55 @@ export function SanctuaryScene({
 
       const activeCount = Math.min(MAX_LOTUSES, Math.max(1, liveRef.current.blooms))
       const activeHitMeshes = hitMeshes.slice(0, activeCount)
-      const hits = raycaster.intersectObjects(activeHitMeshes, false)
+      const hits = raycaster.intersectObjects([...activeHitMeshes, ...lanternHitMeshes], false)
       if (hits.length > 0) {
-        const idx = hits[0].object.userData?.bloomIndex
-        if (typeof idx === 'number') return idx
+        const hitData = hits[0].object.userData
+        if (typeof hitData?.bloomIndex === 'number') {
+          return { bloomIndex: hitData.bloomIndex, lanternIndex: null }
+        }
+        if (typeof hitData?.lanternIndex === 'number') {
+          return { bloomIndex: null, lanternIndex: hitData.lanternIndex }
+        }
       }
-      return null
+      return { bloomIndex: null, lanternIndex: null }
     }
 
     const onDomPointerMove = (ev: PointerEvent) => {
       if (liveRef.current.tab !== 'garden') return
-      const idx = getIntersectedLotusIndex(ev.clientX, ev.clientY)
-      if (idx !== liveRef.current.hoveredIndex) {
-        liveRef.current.hoveredIndex = idx
-        setHoveredBloomIndex(idx)
+      const { bloomIndex, lanternIndex } = getIntersectedGardenTarget(ev.clientX, ev.clientY)
+      if (bloomIndex !== liveRef.current.hoveredIndex) {
+        liveRef.current.hoveredIndex = bloomIndex
+        setHoveredBloomIndex(bloomIndex)
+      }
+      if (lanternIndex !== liveRef.current.hoveredLantern) {
+        liveRef.current.hoveredLantern = lanternIndex
+        setHoveredLanternIndex(lanternIndex)
       }
     }
 
     const onDomClick = (ev: MouseEvent) => {
       if (liveRef.current.tab !== 'garden') return
-      const idx = getIntersectedLotusIndex(ev.clientX, ev.clientY)
-      liveRef.current.selectedIndex = idx
-      setSelectedBloomIndex(idx)
-      if (idx !== null) {
-        const record = liveRef.current.checkIns[idx] || getFallbackCheckIn(idx)
+      // Ignore clicks that were actually camera orbit drags
+      if (liveRef.current.dragDistance > 6) return
+
+      const { bloomIndex, lanternIndex } = getIntersectedGardenTarget(ev.clientX, ev.clientY)
+      if (lanternIndex !== null && lanterns[lanternIndex]) {
+        const clickedLantern = lanterns[lanternIndex]
+        clickedLantern.boostLife = 1.0
+        clickedLantern.riseOffset = Math.min(0.85, clickedLantern.riseOffset + 0.32)
+        triggerEmberBurst(
+          clickedLantern.group.position.x,
+          clickedLantern.group.position.y - 0.15,
+          clickedLantern.group.position.z
+        )
+        liveRef.current.onLanternClick?.(lanternIndex)
+        return
+      }
+
+      liveRef.current.selectedIndex = bloomIndex
+      setSelectedBloomIndex(bloomIndex)
+      if (bloomIndex !== null) {
+        const record = liveRef.current.checkIns[bloomIndex] || getFallbackCheckIn(bloomIndex)
         liveRef.current.onSelectBloom?.(record)
       } else {
         liveRef.current.onSelectBloom?.(null)
@@ -1098,23 +1390,41 @@ export function SanctuaryScene({
     let frameId = 0
     const clock = new THREE.Clock()
     const tempColor = new THREE.Color()
+    const palColor = new THREE.Color()
 
     const animate = () => {
       frameId = window.requestAnimationFrame(animate)
       const elapsed = clock.getElapsedTime()
       const state = liveRef.current
+      const palette = ATMOSPHERE_PALETTES[state.atmospherePreset] || ATMOSPHERE_PALETTES.twilight
 
       // 10-second respiratory breath synchronization when breathActive is true
       const breathWave = state.breathActive ? getBreathFactor(elapsed) : 0.5
       const breathScaleBoost = state.breathActive ? 0.88 + breathWave * 0.28 : 1.0
 
+      // Smoothly blend atmosphere preset across sky, hemisphere light, water reflection, and Moon Gate
+      palColor.setHex(palette.skyHex)
+      hemiLight.color.lerp(palColor, 0.04)
+      moonGateLight.color.lerp(palColor, 0.04)
+      moonArchMat.emissive.lerp(palColor, 0.04)
+      portalDiscMat.color.lerp(palColor, 0.04)
+      shoreRingMat.color.lerp(palColor, 0.04)
+
+      palColor.setHex(palette.waterEmissiveHex)
+      waterMat.emissive.lerp(palColor, 0.04)
+      if (scene.fog instanceof THREE.FogExp2) {
+        palColor.setHex(palette.fogHex)
+        scene.fog.color.lerp(palColor, 0.04)
+      }
+
       // Update Aurora & Fresnel Spirit Wisp Shader uniforms
       auroraUniforms.uTime.value = elapsed
       coreUniforms.uTime.value = elapsed
-      tempColor.set(state.auraColor)
+      tempColor.set(state.tab === 'garden' ? palette.auroraHex : state.auraColor)
       auroraUniforms.uAuraColor.value.lerp(tempColor, 0.05)
-      coreUniforms.uColor.value.lerp(tempColor, 0.06)
 
+      tempColor.set(state.auraColor)
+      coreUniforms.uColor.value.lerp(tempColor, 0.06)
       coreGlowMat.color.lerp(tempColor, 0.06)
       orbitRingMat2.color.lerp(tempColor, 0.06)
       rippleRingMat.color.lerp(tempColor, 0.06)
@@ -1129,9 +1439,9 @@ export function SanctuaryScene({
       const targetCoreY =
         state.tab === 'aura'
           ? -0.05 + normY * 0.5 + Math.sin(elapsed * 1.5) * 0.04
-          : 1.38 + Math.sin(elapsed * 1.1) * 0.06
+          : 1.42 + Math.sin(elapsed * 1.1) * 0.06
       const targetCoreZ = state.tab === 'aura' ? 0.0 : -5.15
-      const targetCoreScale = (state.tab === 'aura' ? 1.0 : 0.58) * breathScaleBoost
+      const targetCoreScale = (state.tab === 'aura' ? 1.0 : 0.62) * breathScaleBoost
 
       coreGroup.position.x += (targetCoreX - coreGroup.position.x) * 0.08
       coreGroup.position.y += (targetCoreY - coreGroup.position.y) * 0.08
@@ -1149,7 +1459,7 @@ export function SanctuaryScene({
       const rippleFreq = state.breathActive ? 0.628 : 2.0
       const rippleScale = 1 + Math.sin(elapsed * rippleFreq) * 0.16
       rippleRing.scale.setScalar(rippleScale)
-      rippleRingMat.opacity = state.tab === 'aura' ? 0.26 : 0.08
+      rippleRingMat.opacity = state.tab === 'aura' ? 0.26 : 0.1
 
       // Subtle organic vertex breathing on the Spirit Wisp Core
       const energySpeed = 1.0 + (state.orb.x / 100) * 1.8
@@ -1177,16 +1487,17 @@ export function SanctuaryScene({
       orbitRing1.rotation.z = elapsed * 0.28
       orbitRing2.rotation.z = -elapsed * 0.22
 
-      // Update Distant Moon Gate & Vertical Rising Island Light Motes
-      innerArch.rotation.z = elapsed * 0.12
-      portalDiscMat.opacity = 0.045 + Math.sin(elapsed * 1.2) * 0.02
+      // Update Distant Moon Gate, Water Reflection Path & Vertical Rising Island Light Motes
+      innerArch.rotation.z = elapsed * 0.14
+      portalDiscMat.opacity = 0.095 + Math.sin(elapsed * 1.2) * 0.025
       shoreRing.scale.setScalar(1 + Math.sin(elapsed * 1.3) * 0.035)
+      reflectionPathMat.opacity = 0.2 + Math.sin(elapsed * 1.5) * 0.05
 
       const mAttr = moteGeo.attributes.position as THREE.BufferAttribute
       for (let i = 0; i < ISLAND_MOTE_COUNT; i++) {
-        let my = mAttr.getY(i) + 0.005
+        let my = mAttr.getY(i) + 0.0055
         const mx = mAttr.getX(i) + Math.sin(elapsed * 0.8 + moteSeeds[i]) * 0.0015
-        if (my > 3.1) my = 0.15
+        if (my > 3.2) my = 0.15
         mAttr.setX(i, mx)
         mAttr.setY(i, my)
       }
@@ -1256,19 +1567,63 @@ export function SanctuaryScene({
           tempColor.setHex(hex)
           lotus.petalMat.color.lerp(tempColor, 0.06)
           lotus.petalMat.emissive.lerp(tempColor, 0.06)
-          lotus.petalMat.emissiveIntensity = isSelected || isHovered ? 0.82 : 0.48
+          lotus.petalMat.emissiveIntensity = isSelected || isHovered ? 0.85 : 0.52
           lotus.glowMat.color.lerp(tempColor, 0.06)
         }
       }
 
-      // Update Delicate Floating Sky Lanterns
+      // Update Sculpted 3D Floating Sky Lanterns with 3-axis organic wind sway & click illumination
       for (let i = 0; i < lanterns.length; i++) {
         const l = lanterns[i]
-        l.group.position.y = l.baseY + Math.sin(elapsed * 0.85 + l.phase) * 0.18
-        l.group.position.x = l.baseX + Math.cos(elapsed * 0.42 + l.phase) * 0.14
+        const isHovered = state.hoveredLantern === i
+        if (l.boostLife > 0.005) {
+          l.boostLife = Math.max(0, l.boostLife - 0.008)
+        }
+        l.riseOffset = Math.max(0, l.riseOffset - 0.0008)
+
+        l.group.position.y =
+          l.baseY + l.riseOffset + Math.sin(elapsed * 0.85 + l.phase) * 0.19
+        l.group.position.x = l.baseX + Math.cos(elapsed * 0.42 + l.phase) * 0.15
+        l.group.position.z = l.baseZ + Math.sin(elapsed * 0.36 + l.phase * 1.3) * 0.12
         l.group.rotation.y = elapsed * 0.25 + l.phase
-        const pulse = 0.64 + Math.sin(elapsed * 1.8 + l.phase) * 0.08
+        l.group.rotation.z = Math.sin(elapsed * 0.9 + l.phase) * 0.055
+        l.group.rotation.x = Math.cos(elapsed * 0.75 + l.phase) * 0.045
+
+        const glowBoost = l.boostLife * 0.65 + (isHovered ? 0.25 : 0)
+        l.shadeMat.emissiveIntensity = 1.05 + glowBoost * 1.1
+        l.haloMat.opacity = Math.min(0.88, 0.44 + glowBoost * 0.42)
+        const pulse = 0.78 + Math.sin(elapsed * 2.1 + l.phase) * 0.09 + glowBoost * 0.38
         l.haloSprite.scale.set(pulse, pulse, 1)
+      }
+
+      // Update Rising Wish Lantern Ritual
+      if (state.wishTrigger) {
+        state.wishTrigger = false
+        wishLanternLife = 1.0
+        wishLanternGroup.visible = true
+        wishLanternGroup.position.set(0, -1.25, 0.55)
+        triggerEmberBurst(0, -1.25, 0.55)
+      }
+      if (wishLanternLife > 0.005) {
+        wishLanternLife = Math.max(0, wishLanternLife - 0.0032)
+        const progress = 1.0 - wishLanternLife
+        wishLanternGroup.position.y = -1.25 + progress * 4.8
+        wishLanternGroup.position.z = 0.55 - progress * 4.6
+        wishLanternGroup.position.x = Math.sin(progress * Math.PI * 2.5) * 0.28
+        wishLanternGroup.rotation.y = elapsed * 0.45
+        wishLanternGroup.rotation.z = Math.sin(elapsed * 1.4) * 0.06
+        const fade =
+          progress < 0.12
+            ? progress / 0.12
+            : wishLanternLife < 0.2
+              ? wishLanternLife / 0.2
+              : 1.0
+        wishShadeMat.opacity = fade * 0.96
+        wishHaloMat.opacity = fade * 0.72
+        const wPulse = 1.15 + Math.sin(elapsed * 3.0) * 0.12
+        wishHaloSprite.scale.set(wPulse, wPulse, 1)
+      } else {
+        wishLanternGroup.visible = false
       }
 
       // Update Bioluminescent Particles
@@ -1325,15 +1680,16 @@ export function SanctuaryScene({
         const waveProgress = 1.0 - illuminateLife
         shockwaveRing.scale.setScalar(1.0 + waveProgress * 8.5)
         shockwaveMat.opacity = illuminateLife * 0.65
-        moonArchMat.emissiveIntensity = 0.42 + illuminateLife * 0.85
-        portalDiscMat.opacity = 0.055 + illuminateLife * 0.16
-        moonGateLight.intensity = 2.2 + illuminateLife * 3.2
+        moonArchMat.emissiveIntensity = 0.72 + illuminateLife * 0.95
+        portalDiscMat.opacity = 0.11 + illuminateLife * 0.2
+        moonGateLight.intensity = 3.2 + illuminateLife * 3.4
         if (state.selectedIndex !== null && lotuses[state.selectedIndex]) {
-          lotuses[state.selectedIndex].petalMat.emissiveIntensity = 0.82 + illuminateLife * 0.65
+          lotuses[state.selectedIndex].petalMat.emissiveIntensity = 0.85 + illuminateLife * 0.65
         }
       } else {
         shockwaveMat.opacity = 0
-        moonArchMat.emissiveIntensity = 0.42
+        moonArchMat.emissiveIntensity = 0.72
+        moonGateLight.intensity = 3.2
       }
 
       // Smooth Camera Choreography:
@@ -1360,18 +1716,38 @@ export function SanctuaryScene({
         )
         targetLookAt.set(sel.baseX, -1.15, sel.baseZ - 0.35)
       } else {
-        const orbitAngle = Math.sin(elapsed * 0.14) * 0.32 + px * 0.35
-        const camRadius = state.immersive ? 6.6 : 7.1
+        const autoSway = state.userOrbited ? 0 : Math.sin(elapsed * 0.14) * 0.18
+        const theta = state.orbitTheta + autoSway + px * 0.16
+        const phi = state.orbitPhi + py * 0.04
+        const radius = state.orbitRadius
+
+        let centerZ = -1.6
+        let lookY = -0.42
+        let lookZ = -1.8
+        if (state.cameraPreset === 'moongate') {
+          centerZ = -2.2
+          lookY = -0.05
+          lookZ = -4.8
+        } else if (state.cameraPreset === 'pond') {
+          centerZ = -0.8
+          lookY = -1.05
+          lookZ = -1.4
+        } else if (state.cameraPreset === 'canopy') {
+          centerZ = -1.4
+          lookY = 1.15
+          lookZ = -4.6
+        }
+
         targetCamPos.set(
-          Math.sin(orbitAngle) * camRadius,
-          1.15 + py * 0.3,
-          Math.cos(orbitAngle) * camRadius
+          Math.sin(theta) * Math.cos(phi) * radius,
+          -0.35 + Math.sin(phi) * radius,
+          centerZ + Math.cos(theta) * Math.cos(phi) * radius
         )
-        targetLookAt.set(0, -0.45, -1.6)
+        targetLookAt.set(Math.sin(theta) * 0.35, lookY, lookZ)
       }
 
-      camera.position.lerp(targetCamPos, 0.05)
-      currentLookAt.lerp(targetLookAt, 0.06)
+      camera.position.lerp(targetCamPos, 0.06)
+      currentLookAt.lerp(targetLookAt, 0.07)
       camera.lookAt(currentLookAt)
 
       renderer.render(scene, camera)
@@ -1408,6 +1784,8 @@ export function SanctuaryScene({
     }
   }, [])
 
+  const dragStartRef = useRef<{ x: number; y: number; theta: number; phi: number } | null>(null)
+
   const updateOrbFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
     const relX = (e.clientX - r.left) / r.width
@@ -1429,28 +1807,71 @@ export function SanctuaryScene({
   return (
     <div
       onPointerDown={e => {
-        if (tab === 'aura') updateOrbFromPointer(e)
-      }}
-      onPointerMove={e => {
-        if (e.buttons === 1 && tab === 'aura') {
+        liveRef.current.dragDistance = 0
+        if (tab === 'aura') {
           updateOrbFromPointer(e)
         } else {
-          const r = e.currentTarget.getBoundingClientRect()
-          liveRef.current.pointerParallax = {
-            x: ((e.clientX - r.left) / r.width - 0.5) * 2,
-            y: (0.5 - (e.clientY - r.top) / r.height) * 2,
+          dragStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            theta: liveRef.current.orbitTheta,
+            phi: liveRef.current.orbitPhi,
+          }
+          setIsDraggingOrbit(true)
+        }
+      }}
+      onPointerMove={e => {
+        const r = e.currentTarget.getBoundingClientRect()
+        liveRef.current.pointerParallax = {
+          x: ((e.clientX - r.left) / r.width - 0.5) * 2,
+          y: (0.5 - (e.clientY - r.top) / r.height) * 2,
+        }
+
+        if (e.buttons === 1 && tab === 'aura') {
+          updateOrbFromPointer(e)
+        } else if (e.buttons === 1 && tab === 'garden' && dragStartRef.current) {
+          const dx = e.clientX - dragStartRef.current.x
+          const dy = e.clientY - dragStartRef.current.y
+          const dist = Math.hypot(dx, dy)
+          liveRef.current.dragDistance = dist
+          if (dist > 3) {
+            liveRef.current.userOrbited = true
+            liveRef.current.orbitTheta = Math.max(
+              -1.15,
+              Math.min(1.15, dragStartRef.current.theta - dx * 0.0045)
+            )
+            liveRef.current.orbitPhi = Math.max(
+              0.06,
+              Math.min(0.62, dragStartRef.current.phi + dy * 0.0032)
+            )
           }
         }
       }}
+      onPointerUp={() => {
+        dragStartRef.current = null
+        setIsDraggingOrbit(false)
+      }}
       onPointerLeave={() => {
         liveRef.current.pointerParallax = { x: 0, y: 0 }
+        dragStartRef.current = null
+        setIsDraggingOrbit(false)
       }}
-      className={`relative h-full w-full select-none overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_18%,rgba(126,200,184,0.13),rgba(8,7,17,0.97)_76%)] touch-none ${
+      onWheel={e => {
+        if (tab !== 'garden') return
+        liveRef.current.userOrbited = true
+        liveRef.current.orbitRadius = Math.max(
+          3.6,
+          Math.min(8.2, liveRef.current.orbitRadius + e.deltaY * 0.0032)
+        )
+      }}
+      className={`relative h-full w-full select-none overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_18%,rgba(126,200,184,0.16),rgba(8,7,17,0.96)_78%)] touch-none ${
         tab === 'aura'
           ? 'cursor-grab active:cursor-grabbing'
-          : hoveredBloomIndex !== null
+          : hoveredBloomIndex !== null || hoveredLanternIndex !== null
             ? 'cursor-pointer'
-            : 'cursor-default'
+            : isDraggingOrbit
+              ? 'cursor-grabbing'
+              : 'cursor-grab'
       }`}
     >
       {tab === 'aura' && (

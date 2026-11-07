@@ -146,32 +146,32 @@ export function AppShell({
 
       {/* DESKTOP SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.07] bg-[#0a0c14]/85 pt-2 backdrop-blur-2xl transition-[width] duration-300 lg:flex ${
+        className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/[0.07] bg-[#0a0c14]/85 backdrop-blur-2xl transition-[width] duration-300 lg:flex ${
           collapsed ? 'w-[76px]' : 'w-[272px]'
         }`}
         aria-label="Sanctuary navigation"
       >
-        <div className={`flex items-center gap-3 p-5 ${collapsed ? 'justify-center' : ''}`}>
+        <div className={`flex items-center gap-2.5 px-4 pt-4 pb-2.5 ${collapsed ? 'justify-center' : ''}`}>
           <div className="brand-mark shrink-0">
-            <Sparkles size={16} />
+            <Sparkles size={15} />
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="font-serif text-lg tracking-[0.2em] text-white">LUMINA</p>
+              <p className="font-serif text-base tracking-[0.2em] text-white">LUMINA</p>
               <p className="text-[9px] uppercase tracking-[0.18em] text-white/40">your emotional sanctuary</p>
             </div>
           )}
         </div>
 
         {!collapsed && (
-          <div className="mx-4 mb-3 flex items-center gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-2.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#d9aec1] font-serif text-[#211722]">
+          <div className="mx-3 mb-2 flex items-center gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-2.5 py-2">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#d9aec1] font-serif text-xs text-[#211722]">
               {displayName.slice(0, 1).toUpperCase()}
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5">
               <p className="truncate text-xs text-white/85">{displayName}</p>
               <span
-                className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider ${
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider ${
                   isGuest ? 'bg-[#e0c28a]/15 text-[#e8cf9f]' : 'bg-[#8ec9bd]/15 text-[#a5d4ca]'
                 }`}
               >
@@ -181,8 +181,8 @@ export function AppShell({
           </div>
         )}
 
-        <nav className="flex-1 overflow-y-auto px-3 py-1">
-          <ul className="flex flex-col gap-1">
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-0.5 pr-1">
+          <ul className="flex flex-col space-y-0.5">
             {NAV_ITEMS.map(item => {
               const active = isActive(pathname, item.href)
               const Icon = item.icon
@@ -192,7 +192,7 @@ export function AppShell({
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
                     title={collapsed ? item.label : undefined}
-                    className={`group flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition ${
+                    className={`group flex items-center gap-2.5 rounded-xl border px-3 py-1.5 transition ${
                       collapsed ? 'justify-center' : ''
                     } ${
                       active
@@ -200,11 +200,11 @@ export function AppShell({
                         : 'border-transparent text-white/55 hover:bg-white/[0.05] hover:text-white'
                     }`}
                   >
-                    <Icon size={17} strokeWidth={1.5} className={active ? 'text-[#edb4c5]' : ''} />
+                    <Icon size={16} strokeWidth={1.5} className={`shrink-0 ${active ? 'text-[#edb4c5]' : ''}`} />
                     {!collapsed && (
-                      <span className="min-w-0">
-                        <span className="block truncate text-[13px]">{item.label}</span>
-                        <span className="block truncate text-[10px] text-white/35">{item.subtitle}</span>
+                      <span className="min-w-0 leading-tight">
+                        <span className="block truncate text-[12.5px]">{item.label}</span>
+                        <span className="block truncate text-[9.5px] text-white/35">{item.subtitle}</span>
                       </span>
                     )}
                   </Link>
@@ -214,16 +214,16 @@ export function AppShell({
           </ul>
         </nav>
 
-        <div className="space-y-3 p-4">
+        <div className="space-y-2 p-3">
           {!collapsed ? (
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3.5">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3">
               <div className="flex items-center gap-2.5">
                 <span
-                  className="h-3 w-3 shrink-0 rounded-full"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ background: aura.color, boxShadow: `0 0 12px ${aura.color}` }}
                 />
                 <div className="min-w-0">
-                  <p className="truncate font-serif text-sm" style={{ color: aura.color }}>
+                  <p className="truncate font-serif text-xs" style={{ color: aura.color }}>
                     {aura.label}
                   </p>
                   <p className="text-[10px] text-white/40">
@@ -234,7 +234,7 @@ export function AppShell({
               <button
                 onClick={toggleRain}
                 aria-pressed={rainPlaying}
-                className={`support-button mt-3 w-full justify-center ${
+                className={`support-button mt-2 w-full justify-center !py-1.5 ${
                   rainPlaying ? 'border-[#91cabe]/50 text-[#a5d4ca]' : ''
                 }`}
               >
@@ -255,7 +255,7 @@ export function AppShell({
           <button
             onClick={() => setCollapsed(v => !v)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar for immersion'}
-            className={`support-button w-full ${collapsed ? 'justify-center' : ''}`}
+            className={`support-button w-full !py-1.5 ${collapsed ? 'justify-center' : ''}`}
           >
             {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
             {!collapsed && 'Collapse'}
