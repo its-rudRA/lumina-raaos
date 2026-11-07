@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import type { CheckInRecord } from '@/lib/db'
+import { EMOTION_OPTIONS, type CheckInRecord } from '@/lib/db'
 
 export type GardenCameraPreset = 'overview' | 'moongate' | 'pond' | 'canopy'
 export type GardenAtmospherePreset = 'twilight' | 'rose' | 'celestial' | 'dawn'
@@ -25,6 +25,7 @@ export interface SanctuarySceneProps {
   atmospherePreset?: GardenAtmospherePreset
   wishLanternCount?: number
   onLanternClick?: (index: number) => void
+  sensoryMode?: 'full' | 'gentle' | 'low'
 }
 
 const MAX_LOTUSES = 24
@@ -42,6 +43,21 @@ function colorForAuraLabel(label?: string, index = 0): number {
   return palette[index % palette.length]
 }
 
+function colorForCheckIn(record?: CheckInRecord, index = 0): number {
+  if (record?.emotionId || record?.emotionLabel) {
+    const matched = EMOTION_OPTIONS.find(
+      o =>
+        o.id === record.emotionId ||
+        (record.emotionLabel && o.label.toLowerCase() === record.emotionLabel.toLowerCase())
+    )
+    if (matched) {
+      const parsed = Number.parseInt(matched.color.replace('#', ''), 16)
+      if (!Number.isNaN(parsed)) return parsed
+    }
+  }
+  return colorForAuraLabel(record?.auraLabel, index)
+}
+
 export function formatRelativeTime(timestamp: number): string {
   const diffSec = Math.max(1, Math.floor((Date.now() - timestamp) / 1000))
   if (diffSec < 60) return 'Planted just now'
@@ -54,21 +70,45 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 function getFallbackCheckIn(index: number): CheckInRecord {
-  const presets: Array<{ auraLabel: string; tags: string[]; orb: { x: number; y: number } }> = [
+  const presets: Array<{
+    auraLabel: string
+    tags: string[]
+    orb: { x: number; y: number }
+    emotionId: string
+    emoji: string
+    emotionLabel: string
+    intensity: number
+    note: string
+  }> = [
     {
       auraLabel: 'Softly Grounded',
       tags: ['Quietly tired', 'Need comfort'],
       orb: { x: 48, y: 52 },
+      emotionId: 'grounded',
+      emoji: '🌿',
+      emotionLabel: 'Grounded',
+      intensity: 3,
+      note: 'Taking a slow breath beside the sanctuary water.',
     },
     {
       auraLabel: 'Quietly Heavy',
       tags: ['Tight chest', 'Quietly tired'],
       orb: { x: 32, y: 68 },
+      emotionId: 'exhausted',
+      emoji: '🌙',
+      emotionLabel: 'Exhausted',
+      intensity: 4,
+      note: 'Carrying a tired mind, letting this lotus hold the weight for a moment.',
     },
     {
       auraLabel: 'Wired & Overthinking',
       tags: ['Overthinking', 'Academic pressure'],
       orb: { x: 72, y: 34 },
+      emotionId: 'anxious',
+      emoji: '🦋',
+      emotionLabel: 'Anxious',
+      intensity: 3,
+      note: 'Many thoughts moving at once—pausing here to soften the pace.',
     },
   ]
   const pick = presets[index % presets.length]
@@ -78,6 +118,11 @@ function getFallbackCheckIn(index: number): CheckInRecord {
     orb: pick.orb,
     auraLabel: pick.auraLabel,
     tags: pick.tags,
+    emotionId: pick.emotionId,
+    emoji: pick.emoji,
+    emotionLabel: pick.emotionLabel,
+    intensity: pick.intensity,
+    note: pick.note,
   }
 }
 
@@ -300,6 +345,7 @@ export function SanctuaryScene({
   atmospherePreset = 'twilight',
   wishLanternCount = 0,
   onLanternClick,
+  sensoryMode,
 }: SanctuarySceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredBloomIndex, setHoveredBloomIndex] = useState<number | null>(null)
@@ -318,6 +364,8 @@ export function SanctuaryScene({
     breathActive,
     cameraPreset,
     atmospherePreset,
+    sensoryMode,
+    prefersReducedMotion: false,
     pointerParallax: { x: 0, y: 0 },
     orbitTheta: 0,
     orbitPhi: 0.22,
@@ -344,6 +392,7 @@ export function SanctuaryScene({
     liveRef.current.immersive = immersive
     liveRef.current.breathActive = breathActive
     liveRef.current.atmospherePreset = atmospherePreset
+    liveRef.current.sensoryMode = sensoryMode
     liveRef.current.onSelectBloom = onSelectBloom
     liveRef.current.onLanternClick = onLanternClick
     if (tab === 'aura') {
@@ -360,6 +409,7 @@ export function SanctuaryScene({
     immersive,
     breathActive,
     atmospherePreset,
+    sensoryMode,
     onSelectBloom,
     onLanternClick,
   ])
@@ -911,10 +961,12 @@ export function SanctuaryScene({
       baseZ: number
       phase: number
       currentScale: number
+      spawnProgress: number
     }
 
     const lotuses: LotusEntry[] = []
     const hitMeshes: THREE.Mesh[] = []
+    const initialActiveBlooms = Math.min(MAX_LOTUSES, Math.max(1, liveRef.current.blooms))
 
     for (let i = 0; i < MAX_LOTUSES; i++) {
       const angle = i * 2.39996 + 0.45
@@ -929,9 +981,10 @@ export function SanctuaryScene({
       const pad = new THREE.Mesh(padGeo, padMat)
       lotusGroup.add(pad)
 
+      const initialTintHex = colorForCheckIn(liveRef.current.checkIns[i], i)
       const rippleMat = trackMat(
         new THREE.MeshBasicMaterial({
-          color: colorForAuraLabel(liveRef.current.checkIns[i]?.auraLabel, i),
+          color: initialTintHex,
           transparent: true,
           opacity: 0.22,
           blending: THREE.AdditiveBlending,
@@ -942,7 +995,7 @@ export function SanctuaryScene({
       lRipple.position.y = 0.01
       lotusGroup.add(lRipple)
 
-      const tintHex = colorForAuraLabel(liveRef.current.checkIns[i]?.auraLabel, i)
+      const tintHex = initialTintHex
       const petalMat = trackMat(
         new THREE.MeshStandardMaterial({
           color: tintHex,
@@ -1039,6 +1092,7 @@ export function SanctuaryScene({
         baseZ,
         phase: i * 0.77,
         currentScale: 0.001,
+        spawnProgress: i < initialActiveBlooms ? 1 : 0,
       })
     }
 
@@ -1386,16 +1440,46 @@ export function SanctuaryScene({
     renderer.domElement.addEventListener('pointermove', onDomPointerMove)
     renderer.domElement.addEventListener('click', onDomClick)
 
-    // 10. 60fps Animation Loop
+    // 10. 60fps Animation Loop with Tab-Visibility Pause & Reduced-Motion / Low-Stimulus Support
     let frameId = 0
+    let isTabHidden = typeof document !== 'undefined' ? document.hidden : false
+    let simTime = 0
     const clock = new THREE.Clock()
     const tempColor = new THREE.Color()
     const palColor = new THREE.Color()
 
+    const motionQuery =
+      typeof window !== 'undefined' && 'matchMedia' in window
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null
+    if (motionQuery) {
+      liveRef.current.prefersReducedMotion = motionQuery.matches
+    }
+    const onMotionPrefChange = (ev: MediaQueryListEvent) => {
+      liveRef.current.prefersReducedMotion = ev.matches
+    }
+    motionQuery?.addEventListener?.('change', onMotionPrefChange)
+
     const animate = () => {
+      if (isTabHidden) {
+        frameId = 0
+        return
+      }
       frameId = window.requestAnimationFrame(animate)
-      const elapsed = clock.getElapsedTime()
+
       const state = liveRef.current
+      const domSensory =
+        typeof document !== 'undefined' ? document.documentElement.dataset.sensory : undefined
+      const effectiveSensory = state.sensoryMode || domSensory || 'full'
+      const isLowMotion = state.prefersReducedMotion || effectiveSensory === 'low'
+      const isGentleMotion = !isLowMotion && effectiveSensory === 'gentle'
+      const motionScale = isLowMotion ? 0.14 : isGentleMotion ? 0.55 : 1.0
+
+      // Clamp delta so resuming from a background tab or lag spike never jumps
+      const rawDelta = Math.min(clock.getDelta(), 0.05)
+      simTime += rawDelta * (isLowMotion ? 0.28 : isGentleMotion ? 0.65 : 1.0)
+      const elapsed = simTime
+
       const palette = ATMOSPHERE_PALETTES[state.atmospherePreset] || ATMOSPHERE_PALETTES.twilight
 
       // 10-second respiratory breath synchronization when breathActive is true
@@ -1438,8 +1522,8 @@ export function SanctuaryScene({
       const targetCoreX = state.tab === 'aura' ? normX * 1.6 : 0
       const targetCoreY =
         state.tab === 'aura'
-          ? -0.05 + normY * 0.5 + Math.sin(elapsed * 1.5) * 0.04
-          : 1.42 + Math.sin(elapsed * 1.1) * 0.06
+          ? -0.05 + normY * 0.5 + Math.sin(elapsed * 1.5) * 0.04 * motionScale
+          : 1.42 + Math.sin(elapsed * 1.1) * 0.06 * motionScale
       const targetCoreZ = state.tab === 'aura' ? 0.0 : -5.15
       const targetCoreScale = (state.tab === 'aura' ? 1.0 : 0.62) * breathScaleBoost
 
@@ -1457,13 +1541,13 @@ export function SanctuaryScene({
       rippleRing.position.x = coreGroup.position.x
       rippleRing.position.z = coreGroup.position.z
       const rippleFreq = state.breathActive ? 0.628 : 2.0
-      const rippleScale = 1 + Math.sin(elapsed * rippleFreq) * 0.16
+      const rippleScale = 1 + Math.sin(elapsed * rippleFreq) * 0.16 * motionScale
       rippleRing.scale.setScalar(rippleScale)
       rippleRingMat.opacity = state.tab === 'aura' ? 0.26 : 0.1
 
       // Subtle organic vertex breathing on the Spirit Wisp Core
-      const energySpeed = 1.0 + (state.orb.x / 100) * 1.8
-      const displacementAmp = 0.035 + ((100 - state.orb.y) / 100) * 0.065
+      const energySpeed = (1.0 + (state.orb.x / 100) * 1.8) * motionScale
+      const displacementAmp = (0.035 + ((100 - state.orb.y) / 100) * 0.065) * motionScale
       const corePosAttr = coreGeo.attributes.position as THREE.BufferAttribute
       for (let i = 0; i < corePosAttr.count; i++) {
         const ix = i * 3
@@ -1489,14 +1573,14 @@ export function SanctuaryScene({
 
       // Update Distant Moon Gate, Water Reflection Path & Vertical Rising Island Light Motes
       innerArch.rotation.z = elapsed * 0.14
-      portalDiscMat.opacity = 0.095 + Math.sin(elapsed * 1.2) * 0.025
-      shoreRing.scale.setScalar(1 + Math.sin(elapsed * 1.3) * 0.035)
-      reflectionPathMat.opacity = 0.2 + Math.sin(elapsed * 1.5) * 0.05
+      portalDiscMat.opacity = 0.095 + Math.sin(elapsed * 1.2) * 0.025 * motionScale
+      shoreRing.scale.setScalar(1 + Math.sin(elapsed * 1.3) * 0.035 * motionScale)
+      reflectionPathMat.opacity = 0.2 + Math.sin(elapsed * 1.5) * 0.05 * motionScale
 
       const mAttr = moteGeo.attributes.position as THREE.BufferAttribute
       for (let i = 0; i < ISLAND_MOTE_COUNT; i++) {
-        let my = mAttr.getY(i) + 0.0055
-        const mx = mAttr.getX(i) + Math.sin(elapsed * 0.8 + moteSeeds[i]) * 0.0015
+        let my = mAttr.getY(i) + 0.0055 * motionScale
+        const mx = mAttr.getX(i) + Math.sin(elapsed * 0.8 + moteSeeds[i]) * 0.0015 * motionScale
         if (my > 3.2) my = 0.15
         mAttr.setX(i, mx)
         mAttr.setY(i, my)
@@ -1513,48 +1597,59 @@ export function SanctuaryScene({
         const wz = waterBasePositions[ix + 2]
         const distFromCore = Math.hypot(wx - coreGroup.position.x, wz - coreGroup.position.z)
         const swell =
-          Math.sin(wx * 0.55 + elapsed * 1.1) * 0.042 +
-          Math.cos(wz * 0.65 + elapsed * 0.9) * 0.035 +
-          Math.sin(distFromCore * 2.4 - elapsed * 2.4 * rainBoost) * 0.018 * rainBoost
+          (Math.sin(wx * 0.55 + elapsed * 1.1) * 0.042 +
+            Math.cos(wz * 0.65 + elapsed * 0.9) * 0.035 +
+            Math.sin(distFromCore * 2.4 - elapsed * 2.4 * rainBoost) * 0.018 * rainBoost) *
+          motionScale
         waterPosAttr.setY(i, baseDropY + swell)
       }
       waterPosAttr.needsUpdate = true
       waterGeo.computeVertexNormals()
 
-      // Update Organic 3D Lotus Flowers
+      // Update Organic 3D Lotus Flowers with Petal-Unfolding Bloom Animation & 12-Emotion Palette
       const activeBlooms = Math.min(MAX_LOTUSES, Math.max(1, state.blooms))
       for (let i = 0; i < MAX_LOTUSES; i++) {
         const lotus = lotuses[i]
         const isVisible = i < activeBlooms
         const isHovered = state.hoveredIndex === i
         const isSelected = state.selectedIndex === i
+
+        if (isVisible) {
+          lotus.spawnProgress = Math.min(1, lotus.spawnProgress + 0.022)
+        } else {
+          lotus.spawnProgress = 0
+        }
+
+        // Smooth ease-out cubic curve for newly planted lotus blooms
+        const easeBloom = 1 - Math.pow(1 - lotus.spawnProgress, 3)
+
         const targetLotusScale = !isVisible
           ? 0.001
-          : isSelected
-            ? 1.18
-            : isHovered
-              ? 1.04
-              : 0.86
+          : (isSelected ? 1.18 : isHovered ? 1.04 : 0.86) * Math.max(0.15, easeBloom)
 
         lotus.currentScale += (targetLotusScale - lotus.currentScale) * 0.08
         lotus.group.visible = lotus.currentScale > 0.01
         if (lotus.group.visible) {
           lotus.group.scale.setScalar(lotus.currentScale)
           lotus.group.position.y =
-            -1.55 + Math.sin(elapsed * 1.3 + lotus.phase) * 0.035
-          lotus.group.rotation.y = elapsed * 0.08 + lotus.phase
+            -1.55 + Math.sin(elapsed * 1.3 + lotus.phase) * 0.035 * motionScale
+          lotus.group.rotation.y = elapsed * 0.08 * motionScale + lotus.phase
 
+          // Petals gently unfold from a closed bud (-0.48 rad) into full bloom as easeBloom -> 1
+          const unfoldOffset = (1 - easeBloom) * -0.48
           const breathOpen = state.breathActive
             ? (breathWave - 0.5) * 0.22
-            : Math.sin(elapsed * 1.1 + lotus.phase) * 0.07 + (isSelected ? 0.12 : 0)
+            : Math.sin(elapsed * 1.1 + lotus.phase) * 0.07 * motionScale + (isSelected ? 0.12 : 0)
           for (let p = 0; p < lotus.outerPivots.length; p++) {
-            lotus.outerPivots[p].children[0].rotation.x = 0.92 + breathOpen
+            lotus.outerPivots[p].children[0].rotation.x = 0.92 + breathOpen + unfoldOffset
           }
           for (let p = 0; p < lotus.midPivots.length; p++) {
-            lotus.midPivots[p].children[0].rotation.x = 0.62 + breathOpen * 0.75
+            lotus.midPivots[p].children[0].rotation.x =
+              0.62 + breathOpen * 0.75 + unfoldOffset * 0.8
           }
           for (let p = 0; p < lotus.innerPivots.length; p++) {
-            lotus.innerPivots[p].children[0].rotation.x = 0.34 + breathOpen * 0.5
+            lotus.innerPivots[p].children[0].rotation.x =
+              0.34 + breathOpen * 0.5 + unfoldOffset * 0.6
           }
 
           const lRippleScale = 1 + ((elapsed * 0.5 + lotus.phase) % 1) * 0.55
@@ -1562,13 +1657,15 @@ export function SanctuaryScene({
           lotus.rippleMat.opacity =
             (1 - ((elapsed * 0.5 + lotus.phase) % 1)) * (isSelected ? 0.45 : 0.22)
 
-          const checkInAura = state.checkIns[i]?.auraLabel
-          const hex = colorForAuraLabel(checkInAura, i)
+          const hex = colorForCheckIn(state.checkIns[i], i)
           tempColor.setHex(hex)
           lotus.petalMat.color.lerp(tempColor, 0.06)
           lotus.petalMat.emissive.lerp(tempColor, 0.06)
-          lotus.petalMat.emissiveIntensity = isSelected || isHovered ? 0.85 : 0.52
+          const spawnGlowBoost = (1 - easeBloom) * 0.45
+          lotus.petalMat.emissiveIntensity =
+            (isSelected || isHovered ? 0.85 : 0.52) + spawnGlowBoost
           lotus.glowMat.color.lerp(tempColor, 0.06)
+          lotus.rippleMat.color.lerp(tempColor, 0.06)
         }
       }
 
@@ -1582,17 +1679,20 @@ export function SanctuaryScene({
         l.riseOffset = Math.max(0, l.riseOffset - 0.0008)
 
         l.group.position.y =
-          l.baseY + l.riseOffset + Math.sin(elapsed * 0.85 + l.phase) * 0.19
-        l.group.position.x = l.baseX + Math.cos(elapsed * 0.42 + l.phase) * 0.15
-        l.group.position.z = l.baseZ + Math.sin(elapsed * 0.36 + l.phase * 1.3) * 0.12
-        l.group.rotation.y = elapsed * 0.25 + l.phase
-        l.group.rotation.z = Math.sin(elapsed * 0.9 + l.phase) * 0.055
-        l.group.rotation.x = Math.cos(elapsed * 0.75 + l.phase) * 0.045
+          l.baseY + l.riseOffset + Math.sin(elapsed * 0.85 + l.phase) * 0.19 * motionScale
+        l.group.position.x =
+          l.baseX + Math.cos(elapsed * 0.42 + l.phase) * 0.15 * motionScale
+        l.group.position.z =
+          l.baseZ + Math.sin(elapsed * 0.36 + l.phase * 1.3) * 0.12 * motionScale
+        l.group.rotation.y = elapsed * 0.25 * motionScale + l.phase
+        l.group.rotation.z = Math.sin(elapsed * 0.9 + l.phase) * 0.055 * motionScale
+        l.group.rotation.x = Math.cos(elapsed * 0.75 + l.phase) * 0.045 * motionScale
 
         const glowBoost = l.boostLife * 0.65 + (isHovered ? 0.25 : 0)
         l.shadeMat.emissiveIntensity = 1.05 + glowBoost * 1.1
         l.haloMat.opacity = Math.min(0.88, 0.44 + glowBoost * 0.42)
-        const pulse = 0.78 + Math.sin(elapsed * 2.1 + l.phase) * 0.09 + glowBoost * 0.38
+        const pulse =
+          0.78 + Math.sin(elapsed * 2.1 + l.phase) * 0.09 * motionScale + glowBoost * 0.38
         l.haloSprite.scale.set(pulse, pulse, 1)
       }
 
@@ -1609,9 +1709,9 @@ export function SanctuaryScene({
         const progress = 1.0 - wishLanternLife
         wishLanternGroup.position.y = -1.25 + progress * 4.8
         wishLanternGroup.position.z = 0.55 - progress * 4.6
-        wishLanternGroup.position.x = Math.sin(progress * Math.PI * 2.5) * 0.28
+        wishLanternGroup.position.x = Math.sin(progress * Math.PI * 2.5) * 0.28 * motionScale
         wishLanternGroup.rotation.y = elapsed * 0.45
-        wishLanternGroup.rotation.z = Math.sin(elapsed * 1.4) * 0.06
+        wishLanternGroup.rotation.z = Math.sin(elapsed * 1.4) * 0.06 * motionScale
         const fade =
           progress < 0.12
             ? progress / 0.12
@@ -1620,7 +1720,7 @@ export function SanctuaryScene({
               : 1.0
         wishShadeMat.opacity = fade * 0.96
         wishHaloMat.opacity = fade * 0.72
-        const wPulse = 1.15 + Math.sin(elapsed * 3.0) * 0.12
+        const wPulse = 1.15 + Math.sin(elapsed * 3.0) * 0.12 * motionScale
         wishHaloSprite.scale.set(wPulse, wPulse, 1)
       } else {
         wishLanternGroup.visible = false
@@ -1632,17 +1732,18 @@ export function SanctuaryScene({
         let py = pAttr.getY(i)
         let px = pAttr.getX(i)
         if (state.rainPlaying) {
-          py -= 0.06
+          py -= 0.06 * Math.max(0.35, motionScale)
           if (py < -1.55) py = 4.2
         } else {
-          py += 0.0075
-          px += Math.sin(elapsed * 0.55 + particleSeeds[i]) * 0.0025
+          py += 0.0075 * motionScale
+          px += Math.sin(elapsed * 0.55 + particleSeeds[i]) * 0.0025 * motionScale
           if (py > 4.2) py = -1.5
         }
         pAttr.setX(i, px)
         pAttr.setY(i, py)
       }
       pAttr.needsUpdate = true
+      particleMat.opacity = isLowMotion ? 0.38 : 0.72
 
       // Update Burn & Release 3D Rising Ember Burst
       if (state.emberTrigger) {
@@ -1694,8 +1795,8 @@ export function SanctuaryScene({
 
       // Smooth Camera Choreography:
       // In 'aura' mode: (0, 0.35, 4.6) looking at (0, -0.25, -0.8) so orb, pond, and Moon Gate stay framed
-      const px = state.pointerParallax.x
-      const py = state.pointerParallax.y
+      const px = state.pointerParallax.x * motionScale
+      const py = state.pointerParallax.y * motionScale
       if (state.tab === 'aura') {
         targetCamPos.set(px * 0.35, 0.35 + py * 0.2, 4.6)
         targetLookAt.set(
@@ -1716,7 +1817,7 @@ export function SanctuaryScene({
         )
         targetLookAt.set(sel.baseX, -1.15, sel.baseZ - 0.35)
       } else {
-        const autoSway = state.userOrbited ? 0 : Math.sin(elapsed * 0.14) * 0.18
+        const autoSway = state.userOrbited ? 0 : Math.sin(elapsed * 0.14) * 0.18 * motionScale
         const theta = state.orbitTheta + autoSway + px * 0.16
         const phi = state.orbitPhi + py * 0.04
         const radius = state.orbitRadius
@@ -1753,7 +1854,26 @@ export function SanctuaryScene({
       renderer.render(scene, camera)
     }
 
-    frameId = window.requestAnimationFrame(animate)
+    const handleVisibilityChange = () => {
+      isTabHidden = document.hidden
+      if (isTabHidden) {
+        if (frameId) {
+          window.cancelAnimationFrame(frameId)
+          frameId = 0
+        }
+      } else {
+        // Discard accumulated hidden tab delta and resume smoothly
+        clock.getDelta()
+        if (!frameId) {
+          frameId = window.requestAnimationFrame(animate)
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (!isTabHidden) {
+      frameId = window.requestAnimationFrame(animate)
+    }
 
     const handleResize = () => {
       if (!container) return
@@ -1769,7 +1889,9 @@ export function SanctuaryScene({
     window.addEventListener('resize', handleResize)
 
     return () => {
-      window.cancelAnimationFrame(frameId)
+      if (frameId) window.cancelAnimationFrame(frameId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      motionQuery?.removeEventListener?.('change', onMotionPrefChange)
       resizeObserver.disconnect()
       window.removeEventListener('resize', handleResize)
       renderer.domElement.removeEventListener('pointermove', onDomPointerMove)

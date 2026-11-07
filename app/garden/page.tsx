@@ -19,7 +19,7 @@ import { AppShell } from '@/components/app-shell'
 import { LazySanctuaryScene } from '@/components/lazy-sanctuary-scene'
 import type { GardenAtmospherePreset, GardenCameraPreset } from '@/components/sanctuary-scene'
 import { useSanctuary } from '@/context/sanctuary-context'
-import type { CheckInRecord } from '@/lib/db'
+import { EMOTION_OPTIONS, type CheckInRecord, type EmotionOption } from '@/lib/db'
 import { glass, SOMATIC_TAGS, timeAgo } from '@/lib/format'
 
 const CAMERA_PRESETS: Array<{ id: GardenCameraPreset; label: string }> = [
@@ -51,10 +51,68 @@ const LANTERN_WHISPERS = [
   'Still waters remember every kindness you offer yourself.',
 ]
 
+const HEAVY_EMOTION_IDS = new Set([
+  'sad',
+  'exhausted',
+  'overwhelmed',
+  'anxious',
+  'numb',
+  'frustrated',
+  'restless',
+])
+
+function getValidatingWhisperForBloom(bloom: CheckInRecord): string {
+  const emotionId = bloom.emotionId?.toLowerCase() || ''
+  const label = (bloom.emotionLabel || bloom.auraLabel || '').toLowerCase()
+  if (
+    HEAVY_EMOTION_IDS.has(emotionId) ||
+    label.includes('heavy') ||
+    label.includes('wired') ||
+    label.includes('sad') ||
+    label.includes('exhausted') ||
+    label.includes('overwhelmed') ||
+    label.includes('anxious') ||
+    label.includes('numb')
+  ) {
+    return 'Even heavy or exhausted moments belong in your sanctuary—this bloom honors that you showed up.'
+  }
+  return 'This bioluminescent lotus holds a quiet record of your presence—every feeling is welcome on these waters.'
+}
+
+function resolveBloomEmotionMeta(bloom: CheckInRecord): {
+  emoji: string
+  emotionLabel: string
+  intensity: number
+  color: string
+} {
+  const matched = EMOTION_OPTIONS.find(
+    o =>
+      o.id === bloom.emotionId ||
+      (bloom.emotionLabel && o.label.toLowerCase() === bloom.emotionLabel.toLowerCase())
+  )
+  return {
+    emoji: bloom.emoji || matched?.emoji || '🌸',
+    emotionLabel: bloom.emotionLabel || matched?.label || bloom.auraLabel || 'Softly Grounded',
+    intensity: bloom.intensity ?? 3,
+    color: matched?.color || '#8ec9bd',
+  }
+}
+
 function GardenContent() {
-  const { orb, setOrb, aura, gardenBlooms, checkIns, rainPlaying, toggleRain, plantCheckIn } =
-    useSanctuary()
+  const {
+    orb,
+    setOrb,
+    aura,
+    gardenBlooms,
+    checkIns,
+    rainPlaying,
+    toggleRain,
+    plantCheckIn,
+    sensoryMode,
+  } = useSanctuary()
   const [tab, setTab] = useState<'aura' | 'garden'>('garden')
+  const [selectedEmotion, setSelectedEmotion] = useState<EmotionOption>(EMOTION_OPTIONS[6]) // Grounded 🌿
+  const [seedIntensity, setSeedIntensity] = useState<number>(3)
   const [tags, setTags] = useState<string[]>(['Need comfort'])
   const [seedNote, setSeedNote] = useState('')
   const [showSeedDrawer, setShowSeedDrawer] = useState(false)
@@ -71,17 +129,32 @@ function GardenContent() {
 
   const total = Math.max(gardenBlooms, checkIns.length)
 
+  function handleSelectEmotionOption(opt: EmotionOption) {
+    setSelectedEmotion(opt)
+    setOrb({
+      x: Math.max(8, Math.min(92, Math.round(opt.energy * 100))),
+      y: Math.max(12, Math.min(88, Math.round((1 - opt.pleasantness) * 100))),
+    })
+  }
+
   async function handlePlantSeed() {
     if (planting) return
     setPlanting(true)
     const chosenTags = tags.length > 0 ? [...tags] : ['Quietly tired']
     const noteText = seedNote.trim() || undefined
-    await plantCheckIn(chosenTags, noteText)
+    await plantCheckIn(chosenTags, noteText, {
+      emotionId: selectedEmotion.id,
+      emoji: selectedEmotion.emoji,
+      emotionLabel: selectedEmotion.label,
+      intensity: seedIntensity,
+    })
     setSeedNote('')
     setShowSeedDrawer(false)
     setTab('garden')
     setIlluminatePulse(p => p + 1)
-    setWishToast('New lotus seed planted on the sanctuary pond.')
+    setWishToast(
+      `${selectedEmotion.emoji} ${selectedEmotion.label} lotus bloom planted on the sanctuary pond.`
+    )
     setTimeout(() => setWishToast(null), 3800)
     setPlanting(false)
   }
@@ -104,6 +177,8 @@ function GardenContent() {
       setIlluminatedLanternIdx(null)
     }
   }
+
+  const selectedBloomMeta = selectedBloom ? resolveBloomEmotionMeta(selectedBloom) : null
 
   return (
     <div className="mx-auto w-full max-w-[1440px]">
@@ -129,6 +204,7 @@ function GardenContent() {
           atmospherePreset={atmospherePreset}
           wishLanternCount={wishLanternCount}
           onLanternClick={handleLanternClick}
+          sensoryMode={sensoryMode}
         />
 
         {/* Top Floating HUD */}
@@ -261,10 +337,10 @@ function GardenContent() {
                 />
                 <div>
                   <p className="font-serif text-lg leading-none" style={{ color: aura.color }}>
-                    {aura.label}
+                    {selectedEmotion.emoji} {selectedEmotion.label} · {aura.label}
                   </p>
                   <p className="mt-1 text-xs text-white/55">
-                    {aura.note} · drag the wisp to sculpt
+                    {aura.note} · drag the wisp or choose an emoji to sculpt
                   </p>
                 </div>
               </div>
@@ -293,26 +369,49 @@ function GardenContent() {
                 <Flower2 size={14} /> {planting ? 'Planting...' : 'Plant Check-In Seed'}
               </button>
             </div>
-          ) : selectedBloom ? (
-            /* Selected 3D Lotus Bloom Memory Card */
-            <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-[#8ec9bd]/30 bg-[#0b0914]/90 px-4 py-3.5 shadow-2xl backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="eyebrow rounded-full border border-[#a4d1c8]/35 bg-[#a4d1c8]/15 px-2.5 py-1 text-[9px] text-[#b7ebe0]">
-                  Lotus Memory · {timeAgo(selectedBloom.timestamp)}
-                </span>
-                <span className="font-serif text-lg text-white">{selectedBloom.auraLabel}</span>
-                {selectedBloom.tags.map(t => (
-                  <span
-                    key={t}
-                    className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-0.5 text-[11px] text-[#f4d9e2]"
-                  >
-                    {t}
+          ) : selectedBloom && selectedBloomMeta ? (
+            /* Selected 3D Lotus Bloom Memory Card with Emotion Validation */
+            <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-[#8ec9bd]/35 bg-[#0b0914]/92 px-4 py-4 shadow-2xl backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="eyebrow rounded-full border border-[#a4d1c8]/35 bg-[#a4d1c8]/15 px-2.5 py-1 text-[9px] text-[#b7ebe0]">
+                    Lotus Memory · {timeAgo(selectedBloom.timestamp)}
                   </span>
-                ))}
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-white"
+                    style={{
+                      borderColor: `${selectedBloomMeta.color}66`,
+                      backgroundColor: `${selectedBloomMeta.color}22`,
+                    }}
+                  >
+                    <span>{selectedBloomMeta.emoji}</span>
+                    <span>{selectedBloomMeta.emotionLabel}</span>
+                  </span>
+                  <span className="rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-0.5 font-mono text-[10px] text-white/80">
+                    Intensity {selectedBloomMeta.intensity}/5
+                  </span>
+                  <span className="font-serif text-base text-white/90">
+                    Aura: {selectedBloom.auraLabel}
+                  </span>
+                  {selectedBloom.tags.map(t => (
+                    <span
+                      key={t}
+                      className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-0.5 text-[11px] text-[#f4d9e2]"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+
                 {selectedBloom.note && (
-                  <span className="text-xs italic text-white/65">“{selectedBloom.note}”</span>
+                  <p className="text-xs italic text-white/80">“{selectedBloom.note}”</p>
                 )}
+
+                <p className="text-xs text-[#b7ebe0]/90">
+                  ✦ {getValidatingWhisperForBloom(selectedBloom)}
+                </p>
               </div>
+
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setIlluminatePulse(p => p + 1)}
@@ -363,53 +462,115 @@ function GardenContent() {
             </div>
           ) : (
             /* Default Garden Dock: Atmosphere Customizer + Quick Plant New Check-In Seed */
-            <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-white/[0.12] bg-[#0b0914]/85 px-4 py-3 shadow-2xl backdrop-blur-xl">
+            <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-white/[0.12] bg-[#0b0914]/88 px-4 py-3.5 shadow-2xl backdrop-blur-xl">
               {showSeedDrawer && (
-                <div className="flex flex-col gap-2.5 border-b border-white/[0.08] pb-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="mr-1 text-[11px] font-medium text-white/60">
-                      Somatic cues:
-                    </span>
-                    {SOMATIC_TAGS.map(tag => (
-                      <button
-                        key={tag}
-                        onClick={() =>
-                          setTags(
-                            tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]
-                          )
-                        }
-                        className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
-                          tags.includes(tag)
-                            ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/20 text-[#b7ebe0]'
-                            : 'border-white/[0.09] bg-white/[0.03] text-white/55 hover:text-white/85'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
+                <div className="space-y-3 border-b border-white/[0.08] pb-3.5">
+                  {/* 12-Emotion Picker + Intensity 1-5 Selector */}
+                  <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="mr-1 text-[11px] font-medium text-white/65">
+                        12-Emotion Bloom:
+                      </span>
+                      {EMOTION_OPTIONS.map(opt => {
+                        const active = selectedEmotion.id === opt.id
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handleSelectEmotionOption(opt)}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition ${
+                              active
+                                ? 'border-white/40 bg-white/[0.15] font-medium text-white shadow-sm'
+                                : 'border-white/[0.08] bg-white/[0.03] text-white/65 hover:text-white/95'
+                            }`}
+                            style={
+                              active
+                                ? {
+                                    borderColor: opt.color,
+                                    boxShadow: `0 0 12px ${opt.color}44`,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <span>{opt.emoji}</span>
+                            <span>{opt.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-white/60">Intensity:</span>
+                      {[1, 2, 3, 4, 5].map(level => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setSeedIntensity(level)}
+                          className={`h-6 w-6 rounded-full border text-[11px] font-medium transition ${
+                            seedIntensity === level
+                              ? 'border-[#8ec9bd] bg-[#8ec9bd]/25 text-[#b7ebe0]'
+                              : 'border-white/10 bg-white/[0.04] text-white/55 hover:text-white'
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={seedNote}
-                      onChange={e => setSeedNote(e.target.value)}
-                      placeholder="Optional whisper for this lotus..."
-                      className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-[#8ec9bd]/50 focus:outline-none sm:w-60"
-                    />
-                    <button
-                      onClick={handlePlantSeed}
-                      disabled={planting}
-                      className="primary-button px-3.5 py-1.5 text-xs"
-                    >
-                      <Check size={13} /> {planting ? 'Planting...' : 'Sprout Lotus Now'}
-                    </button>
-                    <button
-                      onClick={() => setShowSeedDrawer(false)}
-                      className="secondary-button px-2.5 py-1.5 text-xs"
-                      aria-label="Close seed drawer"
-                    >
-                      <X size={13} />
-                    </button>
+
+                  {/* Somatic Cues + Note + Sprout Button */}
+                  <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="mr-1 text-[11px] font-medium text-white/60">
+                        Somatic cues:
+                      </span>
+                      {SOMATIC_TAGS.map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() =>
+                            setTags(
+                              tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]
+                            )
+                          }
+                          className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                            tags.includes(tag)
+                              ? 'border-[#8ec9bd]/60 bg-[#8ec9bd]/20 text-[#b7ebe0]'
+                              : 'border-white/[0.09] bg-white/[0.03] text-white/55 hover:text-white/85'
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={seedNote}
+                        onChange={e => setSeedNote(e.target.value)}
+                        placeholder="Optional whisper for this lotus..."
+                        className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-[#8ec9bd]/50 focus:outline-none sm:w-60"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePlantSeed}
+                        disabled={planting}
+                        className="primary-button px-3.5 py-1.5 text-xs"
+                      >
+                        <Check size={13} />{' '}
+                        {planting
+                          ? 'Planting...'
+                          : `Sprout ${selectedEmotion.emoji} ${selectedEmotion.label} Lotus`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSeedDrawer(false)}
+                        className="secondary-button px-2.5 py-1.5 text-xs"
+                        aria-label="Close seed drawer"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -420,8 +581,8 @@ function GardenContent() {
                     Your garden is not measured in streaks. It grows whenever you return.
                   </p>
                   <p className="text-xs text-white/50">
-                    {total} lotus blooms resting on the water · click any lotus or floating sky
-                    lantern to inspect.
+                    {total} lotus blooms resting on the water · every emotion—bright or heavy—blooms
+                    with dignity.
                   </p>
                 </div>
 

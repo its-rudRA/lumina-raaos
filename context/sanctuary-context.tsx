@@ -28,6 +28,7 @@ import {
   type BioRhythmState,
   type CheckInRecord,
   type CompanionMessage,
+  type JourneyDayReflection,
   type OnboardingStatus,
   type SanctuaryExport,
   type SanctuaryReflection,
@@ -254,6 +255,10 @@ export interface SanctuaryContextValue {
   memories: SemanticMemory[]
   bioRhythm: BioRhythmState
   journeyCompletedDays: number[]
+  journeyReflections: Record<string, JourneyDayReflection>
+  journeyWeeklyNotes: Record<string, string>
+  journeyReminder: string
+  cinemaReelReaction: string
   sensoryMode: SensoryMode
   themeMode: ThemeMode
   starJar: StarJarNote[]
@@ -307,6 +312,14 @@ export interface SanctuaryContextValue {
   removeMemory: (id: string) => Promise<void>
   updateBioRhythm: (bio: BioRhythmState) => Promise<void>
   toggleJourneyDay: (day: number) => Promise<void>
+  saveJourneyDayReflection: (
+    day: number,
+    patch: { note?: string; reaction?: string },
+    markExplored?: boolean
+  ) => Promise<void>
+  saveJourneyWeeklyNote: (weekNumber: number, text: string) => Promise<void>
+  setJourneyReminder: (reminder: string) => Promise<void>
+  setCinemaReelReaction: (reaction: string) => Promise<void>
   updateProfileSettings: (updates: {
     name?: string
     pronouns?: string
@@ -831,6 +844,69 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [update]
   )
 
+  const saveJourneyDayReflection = useCallback(
+    async (
+      day: number,
+      patch: { note?: string; reaction?: string },
+      markExplored = true
+    ) => {
+      if (!Number.isInteger(day) || day < 1 || day > 30) return
+      const key = String(day)
+      const currentMap = profileRef.current.journeyReflections ?? {}
+      const existing = currentMap[key] ?? { updatedAt: Date.now() }
+      const nextEntry: JourneyDayReflection = {
+        ...existing,
+        ...(patch.note !== undefined ? { note: patch.note.trim() } : {}),
+        ...(patch.reaction !== undefined
+          ? {
+              reaction:
+                existing.reaction === patch.reaction && patch.note === undefined
+                  ? undefined
+                  : patch.reaction,
+            }
+          : {}),
+        updatedAt: Date.now(),
+      }
+      const nextReflections = { ...currentMap, [key]: nextEntry }
+      const currentDays = profileRef.current.journeyCompletedDays ?? []
+      const nextDays =
+        markExplored && !currentDays.includes(day)
+          ? [...currentDays, day].sort((a, b) => a - b)
+          : currentDays
+      await update({
+        journeyReflections: nextReflections,
+        journeyCompletedDays: nextDays,
+      })
+    },
+    [update]
+  )
+
+  const saveJourneyWeeklyNote = useCallback(
+    async (weekNumber: number, text: string) => {
+      const current = profileRef.current.journeyWeeklyNotes ?? {}
+      const next = { ...current, [String(weekNumber)]: text.trim() }
+      await update({ journeyWeeklyNotes: next })
+    },
+    [update]
+  )
+
+  const setJourneyReminder = useCallback(
+    async (reminder: string) => {
+      await update({ journeyReminder: reminder })
+    },
+    [update]
+  )
+
+  const setCinemaReelReaction = useCallback(
+    async (reaction: string) => {
+      const current = profileRef.current.cinemaReelReaction
+      await update({
+        cinemaReelReaction: current === reaction ? '' : reaction,
+      })
+    },
+    [update]
+  )
+
   const updateProfileSettings = useCallback(
     async (updates: {
       name?: string
@@ -1150,6 +1226,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     memories: profile.memories ?? [],
     bioRhythm: profile.bioRhythm ?? DEFAULT_BIO_RHYTHM,
     journeyCompletedDays: profile.journeyCompletedDays ?? [],
+    journeyReflections: profile.journeyReflections ?? {},
+    journeyWeeklyNotes: profile.journeyWeeklyNotes ?? {},
+    journeyReminder: profile.journeyReminder ?? 'Off',
+    cinemaReelReaction: profile.cinemaReelReaction ?? '',
     sensoryMode: profile.sensoryMode ?? 'full',
     themeMode: profile.themeMode ?? 'night',
     starJar: profile.starJar ?? [],
@@ -1184,6 +1264,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     removeMemory,
     updateBioRhythm,
     toggleJourneyDay,
+    saveJourneyDayReflection,
+    saveJourneyWeeklyNote,
+    setJourneyReminder,
+    setCinemaReelReaction,
     updateProfileSettings,
     exportData,
     eraseAllData,

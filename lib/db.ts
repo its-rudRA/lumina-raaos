@@ -116,6 +116,12 @@ export interface SanctuaryReflection {
   reaction?: string
 }
 
+export interface JourneyDayReflection {
+  note?: string
+  reaction?: string
+  updatedAt: number
+}
+
 export interface SanctuaryState {
   key: string
   name: string
@@ -130,6 +136,10 @@ export interface SanctuaryState {
   onboarding?: OnboardingStatus
   companionHistory?: CompanionMessage[]
   journeyCompletedDays?: number[]
+  journeyReflections?: Record<string, JourneyDayReflection>
+  journeyWeeklyNotes?: Record<string, string>
+  journeyReminder?: string
+  cinemaReelReaction?: string
   sensoryMode?: 'full' | 'gentle' | 'low'
   themeMode?: 'night' | 'dawn'
   starJar?: StarJarNote[]
