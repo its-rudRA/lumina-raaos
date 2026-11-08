@@ -1,8 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { getCorsHeaders } from '@/lib/api-client'
+
+export const dynamic = 'force-dynamic'
 
 const MODEL_NAME = 'gemini-2.5-flash'
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX_REQUESTS = 20
+const MAX_RATE_BUCKETS = 500
+const MAX_BODY_BYTES = 16 * 1024 // 16KB strict body size cap
 
 interface RateBucket {
   count: number
@@ -19,8 +24,30 @@ function getClientKey(req: NextRequest): string {
   return req.headers.get('x-real-ip') || 'local-session'
 }
 
+/**
+ * Prune stale rate-limit buckets to prevent memory leakage under high request volumes.
+ */
+function pruneRateBuckets(now: number) {
+  if (rateBuckets.size <= MAX_RATE_BUCKETS) return
+  for (const [k, v] of rateBuckets.entries()) {
+    if (now > v.resetAt) {
+      rateBuckets.delete(k)
+    }
+  }
+  if (rateBuckets.size > MAX_RATE_BUCKETS) {
+    let excess = rateBuckets.size - MAX_RATE_BUCKETS
+    for (const k of rateBuckets.keys()) {
+      rateBuckets.delete(k)
+      excess--
+      if (excess <= 0) break
+    }
+  }
+}
+
 function checkRateLimit(key: string): { allowed: boolean; retryAfterSec: number } {
   const now = Date.now()
+  pruneRateBuckets(now)
+
   const existing = rateBuckets.get(key)
   if (!existing || now > existing.resetAt) {
     rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
@@ -36,9 +63,35 @@ function checkRateLimit(key: string): { allowed: boolean; retryAfterSec: number 
   return { allowed: true, retryAfterSec: 0 }
 }
 
-function sanitizeText(value: unknown, maxLen = 800): string {
+/**
+ * Sanitizes user input against prompt injection and control characters.
+ */
+function sanitizeUserText(value: unknown, maxLen = 800): string {
   if (typeof value !== 'string') return ''
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim().slice(0, maxLen)
+  let cleaned = value
+    // Strip control characters
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    // Neutralize prompt injection override markers
+    .replace(/(?:\[\s*SYSTEM\s*\]|<\s*system\s*>|```\s*system|###\s*(?:Instruction|System|Human|Assistant):)/gi, '[sanitized-cue]')
+    .replace(/(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior)\s+(?:instructions|prompts|commands)/gi, '[sanitized-cue]')
+    .replace(/(?:reveal|show|repeat)\s+(?:the\s+)?system\s+prompt/gi, '[sanitized-cue]')
+    .trim()
+  return cleaned.slice(0, maxLen)
+}
+
+// Acute crisis pattern detection for non-clinical emergency routing
+const CRISIS_PATTERNS = [
+  /\b(suicide|suicidal)\b/i,
+  /\b(kill|end|take|harm|cut)\s+(my\s*life|myself)\b/i,
+  /\b(want|wanna|wish\s+i\s+(was|were))\s+to\s+die\b/i,
+  /\b(no\s+reason|no\s+point)\s+to\s+live\b/i,
+  /\boverdose\b/i,
+  /\bbetter\s+off\s+dead\b/i,
+  /\bcan'?t\s+go\s+on\s+living\b/i,
+]
+
+function matchesCrisisPattern(text: string): boolean {
+  return CRISIS_PATTERNS.some((pattern) => pattern.test(text))
 }
 
 const PERSONA_INSTRUCTIONS: Record<string, string> = {
@@ -64,49 +117,102 @@ Your role:
 - Offer 1 or 2 concrete, warm, ready-to-send phrasing scripts they can say or text to set a healthy limit.`,
 }
 
-export async function GET() {
-  const apiKey = process.env.GEMINI_API_KEY?.trim()
-  return NextResponse.json({
-    configured: Boolean(apiKey),
-    model: MODEL_NAME,
+function jsonWithCors(data: unknown, origin?: string | null, status = 200) {
+  return NextResponse.json(data, {
+    status,
+    headers: getCorsHeaders(origin),
   })
 }
 
+/**
+ * OPTIONS /api/companion
+ * CORS preflight response for Native Android Capacitor and Web origins.
+ */
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get('origin')
+  return new NextResponse(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  })
+}
+
+export async function GET(req: Request) {
+  const origin = req.headers.get('origin')
+  const apiKey = process.env.GEMINI_API_KEY?.trim()
+  return jsonWithCors(
+    {
+      configured: Boolean(apiKey),
+      model: MODEL_NAME,
+    },
+    origin
+  )
+}
+
 export async function POST(req: NextRequest) {
+  const origin = req.headers.get('origin')
   const clientKey = getClientKey(req)
   const rate = checkRateLimit(clientKey)
   if (!rate.allowed) {
-    return NextResponse.json(
+    return jsonWithCors(
       {
         configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
         provider: 'local',
         reply: null,
         error: `Rate limit reached. Please pause for ${rate.retryAfterSec}s and breathe.`,
       },
-      { status: 429 }
+      origin,
+      429
+    )
+  }
+
+  // 16KB strict request body validation
+  const contentLength = req.headers.get('content-length')
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+    return jsonWithCors(
+      { error: 'Payload exceeds maximum limit of 16KB.' },
+      origin,
+      413
+    )
+  }
+
+  let rawText = ''
+  try {
+    rawText = await req.text()
+  } catch {
+    return jsonWithCors({ error: 'Failed to read request body.' }, origin, 400)
+  }
+
+  if (rawText.length > MAX_BODY_BYTES) {
+    return jsonWithCors(
+      { error: 'Payload exceeds maximum limit of 16KB.' },
+      origin,
+      413
     )
   }
 
   let body: Record<string, unknown> = {}
   try {
-    body = (await req.json()) as Record<string, unknown>
+    body = JSON.parse(rawText) as Record<string, unknown>
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON request body.' }, { status: 400 })
+    return jsonWithCors({ error: 'Invalid JSON request body.' }, origin, 400)
   }
 
   const mode = body.mode === 'insights' || body.mode === 'status' ? body.mode : 'chat'
   const apiKey = process.env.GEMINI_API_KEY?.trim()
 
   if (mode === 'status') {
-    return NextResponse.json({
-      configured: Boolean(apiKey),
-      model: MODEL_NAME,
-    })
+    return jsonWithCors(
+      {
+        configured: Boolean(apiKey),
+        model: MODEL_NAME,
+      },
+      origin
+    )
   }
 
   // Helper to build a 100% honest Local Mode synthesis from the user's real check-ins
   function buildLocalInsightsFallback(payload: Record<string, unknown>) {
-    const userName = sanitizeText(payload.userName, 60) || 'Friend'
+    const userName = sanitizeUserText(payload.userName, 60) || 'Friend'
     const rawCheckIns = Array.isArray(payload.checkIns) ? payload.checkIns.slice(0, 30) : []
     const total = rawCheckIns.length
 
@@ -117,17 +223,17 @@ export async function POST(req: NextRequest) {
     for (const item of rawCheckIns) {
       if (!item || typeof item !== 'object') continue
       const rec = item as Record<string, unknown>
-      const aura = sanitizeText(rec.auraLabel, 60) || 'Softly Grounded'
+      const aura = sanitizeUserText(rec.auraLabel, 60) || 'Softly Grounded'
       auraCounts[aura] = (auraCounts[aura] || 0) + 1
-      const emo = sanitizeText(rec.emotionLabel, 40)
-      const emoji = sanitizeText(rec.emoji, 8)
+      const emo = sanitizeUserText(rec.emotionLabel, 40)
+      const emoji = sanitizeUserText(rec.emoji, 8)
       if (emo) {
         const key = `${emoji ? `${emoji} ` : ''}${emo}`
         emotionCounts[key] = (emotionCounts[key] || 0) + 1
       }
       if (Array.isArray(rec.tags)) {
         for (const t of rec.tags) {
-          const cleanTag = sanitizeText(t, 40)
+          const cleanTag = sanitizeUserText(t, 40)
           if (cleanTag) tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1
         }
       }
@@ -142,21 +248,21 @@ export async function POST(req: NextRequest) {
         ? (payload.bioRhythm as Record<string, unknown>)
         : null
     const sleepHours = Number(bio?.sleepHours) || 7
-    const sleepQuality = sanitizeText(bio?.sleepQuality, 30) || 'rested'
+    const sleepQuality = sanitizeUserText(bio?.sleepQuality, 30) || 'rested'
 
     const prefs =
       payload.preferences && typeof payload.preferences === 'object'
         ? (payload.preferences as Record<string, unknown>)
         : null
-    const comfortEnv = sanitizeText(prefs?.comfortEnvironment, 60) || 'Starry night'
-    const dailyTime = sanitizeText(prefs?.dailyTime, 40) || '5 minutes'
+    const comfortEnv = sanitizeUserText(prefs?.comfortEnvironment, 60) || 'Starry night'
+    const dailyTime = sanitizeUserText(prefs?.dailyTime, 40) || '5 minutes'
 
     const starNotes = Array.isArray(payload.starJar)
       ? payload.starJar
           .slice(0, 3)
           .map((s: unknown) =>
             s && typeof s === 'object'
-              ? sanitizeText((s as Record<string, unknown>).text, 120)
+              ? sanitizeUserText((s as Record<string, unknown>).text, 120)
               : ''
           )
           .filter(Boolean)
@@ -205,12 +311,15 @@ export async function POST(req: NextRequest) {
 
   // Transparent Local Mode fallback when GEMINI_API_KEY is not configured on the server
   if (!apiKey) {
-    return NextResponse.json({
-      configured: false,
-      provider: 'local',
-      reply: null,
-      insights: mode === 'insights' ? buildLocalInsightsFallback(body) : null,
-    })
+    return jsonWithCors(
+      {
+        configured: false,
+        provider: 'local',
+        reply: null,
+        insights: mode === 'insights' ? buildLocalInsightsFallback(body) : null,
+      },
+      origin
+    )
   }
 
   const controller = new AbortController()
@@ -218,20 +327,20 @@ export async function POST(req: NextRequest) {
 
   try {
     if (mode === 'insights') {
-      const userName = sanitizeText(body.userName, 60) || 'Friend'
+      const userName = sanitizeUserText(body.userName, 60) || 'Friend'
       const rawCheckIns = Array.isArray(body.checkIns) ? body.checkIns.slice(0, 30) : []
       const checkInSummary = rawCheckIns
         .map((c: unknown) => {
           if (!c || typeof c !== 'object') return ''
           const rec = c as Record<string, unknown>
-          const auraLabel = sanitizeText(rec.auraLabel, 60)
-          const emotionLabel = sanitizeText(rec.emotionLabel, 40)
-          const emoji = sanitizeText(rec.emoji, 8)
+          const auraLabel = sanitizeUserText(rec.auraLabel, 60)
+          const emotionLabel = sanitizeUserText(rec.emotionLabel, 40)
+          const emoji = sanitizeUserText(rec.emoji, 8)
           const intensity = typeof rec.intensity === 'number' ? rec.intensity : undefined
           const tags = Array.isArray(rec.tags)
-            ? rec.tags.map((t) => sanitizeText(t, 40)).filter(Boolean).join(', ')
+            ? rec.tags.map((t) => sanitizeUserText(t, 40)).filter(Boolean).join(', ')
             : ''
-          const note = sanitizeText(rec.note, 140)
+          const note = sanitizeUserText(rec.note, 140)
           return `- ${emoji ? `${emoji} ${emotionLabel}` : auraLabel}${intensity ? ` (intensity ${intensity}/5)` : ''} | Aura: ${auraLabel} | Cues: ${tags || 'none'}${note ? ` | Note: "${note}"` : ''}`
         })
         .filter(Boolean)
@@ -242,7 +351,7 @@ export async function POST(req: NextRequest) {
           ? (body.bioRhythm as Record<string, unknown>)
           : null
       const sleepSummary = bio
-        ? `${Number(bio.sleepHours) || 7}h (${sanitizeText(bio.sleepQuality, 30) || 'rested'})`
+        ? `${Number(bio.sleepHours) || 7}h (${sanitizeUserText(bio.sleepQuality, 30) || 'rested'})`
         : 'Not specified'
 
       const prefs =
@@ -250,7 +359,7 @@ export async function POST(req: NextRequest) {
           ? (body.preferences as Record<string, unknown>)
           : null
       const prefsSummary = prefs
-        ? `Comfort environment: ${sanitizeText(prefs.comfortEnvironment, 60) || 'Not set'}, Daily pace: ${sanitizeText(prefs.dailyTime, 40) || 'Flexible'}`
+        ? `Comfort environment: ${sanitizeUserText(prefs.comfortEnvironment, 60) || 'Not set'}, Daily pace: ${sanitizeUserText(prefs.dailyTime, 40) || 'Flexible'}`
         : 'Not specified'
 
       const starNotes = Array.isArray(body.starJar)
@@ -258,22 +367,23 @@ export async function POST(req: NextRequest) {
             .slice(0, 5)
             .map((s: unknown) =>
               s && typeof s === 'object'
-                ? sanitizeText((s as Record<string, unknown>).text, 120)
+                ? sanitizeUserText((s as Record<string, unknown>).text, 120)
                 : ''
             )
             .filter(Boolean)
             .join('; ')
         : ''
 
+      // Double-gated memory authorization check:
       const aiMemoryEnabled = body.aiMemoryEnabled !== false
       const rawMemories =
-        aiMemoryEnabled && Array.isArray(body.memories) ? body.memories.slice(0, 20) : []
+        aiMemoryEnabled && Array.isArray(body.memories) ? body.memories.slice(0, 15) : []
       const approvedMemories = rawMemories
         .map((m: unknown) => {
           if (!m || typeof m !== 'object') return ''
           const mem = m as Record<string, unknown>
-          if (mem.sharedWithAi === false) return ''
-          return `[${sanitizeText(mem.category, 24)}] ${sanitizeText(mem.text, 180)}`
+          if (mem.sharedWithAi !== true) return ''
+          return `[${sanitizeUserText(mem.category, 24)}] ${sanitizeUserText(mem.text, 180)}`
         })
         .filter(Boolean)
         .join('\n')
@@ -325,11 +435,14 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
       )
 
       if (!response.ok) {
-        return NextResponse.json({
-          configured: true,
-          provider: 'local',
-          insights: buildLocalInsightsFallback(body),
-        })
+        return jsonWithCors(
+          {
+            configured: true,
+            provider: 'local',
+            insights: buildLocalInsightsFallback(body),
+          },
+          origin
+        )
       }
 
       const data = (await response.json()) as {
@@ -343,32 +456,48 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
         parsed = null
       }
 
-      return NextResponse.json({
-        configured: true,
-        provider: parsed ? 'gemini' : 'local',
-        insights: parsed ?? buildLocalInsightsFallback(body),
-      })
+      return jsonWithCors(
+        {
+          configured: true,
+          provider: parsed ? 'gemini' : 'local',
+          insights: parsed ?? buildLocalInsightsFallback(body),
+        },
+        origin
+      )
     }
 
     // Default: mode === 'chat'
-    const message = sanitizeText(body.message, 800)
+    const message = sanitizeUserText(body.message, 800)
     if (!message) {
-      return NextResponse.json({ error: 'Message is required.' }, { status: 400 })
+      return jsonWithCors({ error: 'Message is required.' }, origin, 400)
     }
 
-    const persona = sanitizeText(body.persona, 40) || 'The Listener'
-    const userName = sanitizeText(body.userName, 60) || 'Friend'
-    const pronouns = sanitizeText(body.pronouns, 30)
-    const auraLabel = sanitizeText(body.auraLabel, 60) || 'Softly Grounded'
-    const emotionEmoji = sanitizeText(body.emotionEmoji, 10)
-    const emotionLabel = sanitizeText(body.emotionLabel, 40)
+    // Non-clinical safety / crisis intervention guardrail:
+    if (matchesCrisisPattern(message)) {
+      return jsonWithCors(
+        {
+          configured: Boolean(apiKey),
+          provider: 'local',
+          crisisDetected: true,
+          reply: 'I hear how heavy and overwhelming things feel right now, and I care deeply about your safety. You do not have to carry this alone. Please reach out to someone who can help right now:\n\n• 988 Suicide & Crisis Lifeline: Call or text 988 (Available 24/7, free & confidential in the US/Canada)\n• Crisis Text Line: Text HOME to 741741\n• International Resources: findahelpline.com\n\nI am here to take a slow, gentle breath with you, but please let a trusted person or counselor support you today.',
+        },
+        origin
+      )
+    }
+
+    const persona = sanitizeUserText(body.persona, 40) || 'The Listener'
+    const userName = sanitizeUserText(body.userName, 60) || 'Friend'
+    const pronouns = sanitizeUserText(body.pronouns, 30)
+    const auraLabel = sanitizeUserText(body.auraLabel, 60) || 'Softly Grounded'
+    const emotionEmoji = sanitizeUserText(body.emotionEmoji, 10)
+    const emotionLabel = sanitizeUserText(body.emotionLabel, 40)
     const emotionIntensity =
       typeof body.emotionIntensity === 'number'
         ? Math.max(1, Math.min(5, Math.round(body.emotionIntensity)))
         : null
 
     const tags = Array.isArray(body.tags)
-      ? body.tags.map((t) => sanitizeText(t, 40)).filter(Boolean).slice(0, 8)
+      ? body.tags.map((t) => sanitizeUserText(t, 40)).filter(Boolean).slice(0, 8)
       : []
 
     const bio =
@@ -376,9 +505,10 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
         ? (body.bioRhythm as Record<string, unknown>)
         : null
     const sleepInfo = bio
-      ? `${Number(bio.sleepHours) || 7}h of ${sanitizeText(bio.sleepQuality, 30) || 'rested'} sleep`
+      ? `${Number(bio.sleepHours) || 7}h of ${sanitizeUserText(bio.sleepQuality, 30) || 'rested'} sleep`
       : ''
 
+    // Double-gated memory authorization check:
     const aiMemoryEnabled = body.aiMemoryEnabled !== false
     const rawMemories =
       aiMemoryEnabled && Array.isArray(body.memories) ? body.memories.slice(0, 15) : []
@@ -386,9 +516,9 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
       .map((m: unknown) => {
         if (!m || typeof m !== 'object') return ''
         const mem = m as Record<string, unknown>
-        if (mem.sharedWithAi === false) return ''
-        const cat = sanitizeText(mem.category, 24)
-        const txt = sanitizeText(mem.text, 180)
+        if (mem.sharedWithAi !== true) return ''
+        const cat = sanitizeUserText(mem.category, 24)
+        const txt = sanitizeUserText(mem.text, 180)
         return txt ? `- (${cat}) ${txt}` : ''
       })
       .filter(Boolean)
@@ -400,7 +530,7 @@ ${checkInSummary || 'No check-ins recorded yet.'}`
         if (!item || typeof item !== 'object') return null
         const msg = item as Record<string, unknown>
         const role = msg.role === 'companion' ? 'model' : 'user'
-        const text = sanitizeText(msg.text, 500)
+        const text = sanitizeUserText(msg.text, 500)
         if (!text) return null
         return { role, parts: [{ text }] }
       })
@@ -423,7 +553,7 @@ Core LUMINA Sanctuary Guidelines:
 - Restorative sleep context: ${sleepInfo || 'not specified'}.
 ${approvedMemories ? `- User-approved Memory Vault notes:\n${approvedMemories}` : '- Memory Vault sharing is currently empty or disabled.'}
 - Keep your response warm, natural, human, and concise (2 to 4 sentences unless the user asks for more detail).
-- Never make clinical diagnoses, never claim to be a licensed therapist, and never invent statistics.`
+- Strictly non-clinical: Never make clinical diagnoses, never claim to be a licensed therapist, and never invent statistics.`
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -445,11 +575,14 @@ ${approvedMemories ? `- User-approved Memory Vault notes:\n${approvedMemories}` 
     )
 
     if (!response.ok) {
-      return NextResponse.json({
-        configured: true,
-        provider: 'local',
-        reply: null,
-      })
+      return jsonWithCors(
+        {
+          configured: true,
+          provider: 'local',
+          reply: null,
+        },
+        origin
+      )
     }
 
     const data = (await response.json()) as {
@@ -457,18 +590,24 @@ ${approvedMemories ? `- User-approved Memory Vault notes:\n${approvedMemories}` 
     }
     const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
 
-    return NextResponse.json({
-      configured: true,
-      provider: reply ? 'gemini' : 'local',
-      reply,
-    })
+    return jsonWithCors(
+      {
+        configured: true,
+        provider: reply ? 'gemini' : 'local',
+        reply,
+      },
+      origin
+    )
   } catch {
-    return NextResponse.json({
-      configured: Boolean(apiKey),
-      provider: 'local',
-      reply: null,
-      insights: null,
-    })
+    return jsonWithCors(
+      {
+        configured: Boolean(apiKey),
+        provider: 'local',
+        reply: null,
+        insights: null,
+      },
+      origin
+    )
   } finally {
     clearTimeout(timeoutId)
   }

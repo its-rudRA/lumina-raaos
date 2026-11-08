@@ -649,20 +649,24 @@ export function SomaticPulseScan() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-1.5">
-            {(['rested', 'fragmented', 'exhausted'] as const).map(q => (
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            {[
+              { id: 'rested', label: 'Rested' },
+              { id: 'fragmented', label: 'Fragmented' },
+              { id: 'exhausted', label: 'Exhausted' },
+            ].map(({ id, label }) => (
               <button
-                key={q}
+                key={id}
                 type="button"
-                aria-pressed={bioRhythm.sleepQuality === q}
-                onClick={() => saveSleep({ sleepQuality: q })}
-                className={`rounded-xl border px-1 py-1.5 text-center text-[10.5px] font-medium tracking-tight whitespace-nowrap capitalize transition ${
-                  bioRhythm.sleepQuality === q
+                aria-pressed={bioRhythm.sleepQuality === id}
+                onClick={() => saveSleep({ sleepQuality: id as BioRhythmState['sleepQuality'] })}
+                className={`flex-1 min-w-[78px] rounded-xl border px-2 py-1.5 text-center text-[11px] font-medium whitespace-nowrap transition ${
+                  bioRhythm.sleepQuality === id
                     ? 'border-[#b8a4e8]/60 bg-[#b8a4e8]/20 text-white'
                     : 'border-white/[0.08] bg-white/[0.03] text-white/60 hover:text-white'
                 }`}
               >
-                {q}
+                {label}
               </button>
             ))}
           </div>
@@ -852,7 +856,7 @@ export function SomaticPulseScan() {
                   <strong className="block font-normal text-white">
                     {rainPlaying ? `Rain (${formatClock(rainSeconds)})` : '3:00 Acoustic Rain'}
                   </strong>
-                  <span className="text-[10px] text-white/45">174Hz + 261Hz</span>
+                  <span className="text-[10px] text-white/45">Warm rain + ambient pad</span>
                 </span>
               </button>
             </div>

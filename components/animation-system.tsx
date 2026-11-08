@@ -49,7 +49,12 @@ export function AnimeSkyWorld({
 
     let animId = 0
     let isHidden = typeof document !== 'undefined' ? document.hidden : false
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const isMobileViewport =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
+    const dpr = isMobileViewport
+      ? Math.min(window.devicePixelRatio || 1, 1.35)
+      : Math.min(window.devicePixelRatio || 1, 2)
 
     const resize = () => {
       canvas.width = window.innerWidth * dpr
@@ -132,19 +137,13 @@ export function AnimeSkyWorld({
     let smoothPx = 0
     let smoothPy = 0
     const start = performance.now()
+    let lastFrameTime = performance.now()
 
-    const render = (now: number) => {
-      if (isHidden) {
-        animId = 0
-        return
-      }
-      animId = window.requestAnimationFrame(render)
-
+    const drawScene = (now: number, isLow: boolean) => {
       const t = (now - start) / 1000
       const w = window.innerWidth
       const h = window.innerHeight
       const { sensoryMode: currentSensory, intensity: currentIntensity } = modeRef.current
-      const isLow = currentSensory === 'low' || Boolean(reducedQuery?.matches)
       const isGentle = !isLow && currentSensory === 'gentle'
       const speedScale = isLow ? 0 : isGentle ? 0.45 : 1.0
       const alphaScale = currentIntensity === 'subtle' ? 0.68 : 1.0
@@ -346,10 +345,43 @@ export function AnimeSkyWorld({
       }
     }
 
+    const render = (now: number) => {
+      if (isHidden) {
+        animId = 0
+        return
+      }
+
+      const { sensoryMode: currentSensory } = modeRef.current
+      const isLow = currentSensory === 'low' || Boolean(reducedQuery?.matches)
+
+      // In low stimulus mode or reduced motion, render single static twilight frame and stop continuous loop (0% idle GPU)
+      if (isLow) {
+        drawScene(now, true)
+        animId = 0
+        return
+      }
+
+      // Delta frame-pacing: 60 FPS (16.5ms) in full mode, 30 FPS (33ms) in gentle mode
+      const frameInterval = currentSensory === 'gentle' ? 33 : 16.5
+      const deltaSinceLast = now - lastFrameTime
+      if (deltaSinceLast < frameInterval) {
+        animId = window.requestAnimationFrame(render)
+        return
+      }
+      lastFrameTime = now - (deltaSinceLast % frameInterval)
+
+      animId = window.requestAnimationFrame(render)
+      drawScene(now, false)
+    }
+
     const onVisibility = () => {
       isHidden = document.hidden
       if (!isHidden && !animId) {
-        animId = window.requestAnimationFrame(render)
+        const isLow = modeRef.current.sensoryMode === 'low' || Boolean(reducedQuery?.matches)
+        if (!isLow) {
+          lastFrameTime = performance.now()
+          animId = window.requestAnimationFrame(render)
+        }
       }
     }
     document.addEventListener('visibilitychange', onVisibility)
@@ -361,7 +393,7 @@ export function AnimeSkyWorld({
       window.removeEventListener('resize', resize)
       window.removeEventListener('mousemove', onMouseMove)
     }
-  }, [intensity])
+  }, [intensity, sensoryMode])
 
   return (
     <canvas
@@ -459,7 +491,12 @@ export function CelestialSanctuaryCore({
       return
     }
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const isMobileViewport =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
+    const dpr = isMobileViewport
+      ? Math.min(window.devicePixelRatio || 1, 1.5)
+      : Math.min(window.devicePixelRatio || 1, 2)
     renderer.setPixelRatio(dpr)
     renderer.setSize(pixelDim, pixelDim)
     renderer.setClearColor(0x000000, 0)
@@ -695,20 +732,30 @@ export function CelestialSanctuaryCore({
 
     let animId = 0
     let isHidden = typeof document !== 'undefined' ? document.hidden : false
+    let isIntersecting = true
+    let lastFrameTime = performance.now()
     const clock = new THREE.Clock()
     let elapsed = 0
     const targetScaleVec = new THREE.Vector3(1, 1, 1)
 
-    const animate = () => {
-      if (isHidden) {
+    const animate = (now: number) => {
+      if (isHidden || !isIntersecting) {
         animId = 0
         return
       }
       animId = window.requestAnimationFrame(animate)
 
-      const dt = Math.min(clock.getDelta(), 0.05)
       const isLow = sensoryRef.current === 'low'
       const isGentle = sensoryRef.current === 'gentle'
+      // 60 FPS (16.5ms) in full mode, 30 FPS (33ms) in gentle/low mode
+      const frameInterval = isLow || isGentle ? 33 : 16.5
+      const deltaSinceLast = now - lastFrameTime
+      if (deltaSinceLast < frameInterval) {
+        return
+      }
+      lastFrameTime = now - (deltaSinceLast % frameInterval)
+
+      const dt = Math.min(clock.getDelta(), 0.05)
       const speed = isLow ? 0.12 : isGentle ? 0.55 : 1.0
       elapsed += dt * speed
 
@@ -759,16 +806,36 @@ export function CelestialSanctuaryCore({
 
     const onVisibility = () => {
       isHidden = document.hidden
-      if (!isHidden) {
+      if (!isHidden && isIntersecting) {
         clock.getDelta()
+        lastFrameTime = performance.now()
         if (!animId) animId = window.requestAnimationFrame(animate)
       }
     }
     document.addEventListener('visibilitychange', onVisibility)
+
+    const observer = new IntersectionObserver(
+      entries => {
+        const entry = entries[0]
+        isIntersecting = entry ? entry.isIntersecting : true
+        if (isIntersecting && !animId && !isHidden) {
+          clock.getDelta()
+          lastFrameTime = performance.now()
+          animId = window.requestAnimationFrame(animate)
+        } else if (!isIntersecting && animId) {
+          window.cancelAnimationFrame(animId)
+          animId = 0
+        }
+      },
+      { threshold: 0.05 }
+    )
+    observer.observe(container)
+
     animId = window.requestAnimationFrame(animate)
 
     return () => {
       if (animId) window.cancelAnimationFrame(animId)
+      observer.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       geometries.forEach(g => g.dispose())
       materials.forEach(m => m.dispose())

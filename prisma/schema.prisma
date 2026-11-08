@@ -1,0 +1,263 @@
+// LUMINA (RaaOS Engine) — PostgreSQL Database Schema
+// Normalized local-first cloud backup & multi-device sync schema
+// Target: PostgreSQL (Prisma ORM)
+//
+// -----------------------------------------------------------------------------
+// STRICT PRIVACY ARCHITECTURE NOTE:
+// Burn & Release thoughts (from /release-room and quick release micro-rituals)
+// are DELIBERATELY and PERMANENTLY EXCLUDED from this database schema and all
+// cloud tables. They exist solely as transient client-side animation particles,
+// dissolving immediately on screen, and are NEVER written to IndexedDB or PostgreSQL.
+// -----------------------------------------------------------------------------
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -----------------------------------------------------------------------------
+// 1. Core User Identity & Authentication
+// -----------------------------------------------------------------------------
+model User {
+  id           String    @id @default(uuid())
+  email        String?   @unique
+  passwordHash String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions       UserSession[]
+  profile        UserProfile?
+  consent        UserConsent?
+  checkIns       EmotionalCheckIn[]
+  sleepLogs      SleepRecoveryLog[]
+  gardenProgress GardenProgress?
+  starJarNotes   StarJarMemory[]
+  sealedLetters  SealedLetter[]
+  memories       UserApprovedMemory[]
+  messages       CompanionMessageRecord[]
+  journeyState   JourneyAndInsightState?
+  privacyLogs    DataPrivacyAuditLog[]
+
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// 2. Multi-Platform Active Sessions (Web & Android Capacitor)
+// -----------------------------------------------------------------------------
+model UserSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  platform  String   // "web" | "android"
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("user_sessions")
+}
+
+// -----------------------------------------------------------------------------
+// 3. User Profile & Preferences
+// -----------------------------------------------------------------------------
+model UserProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String   @default("Friend")
+  themeMode       String   @default("night")   // "night" | "dawn"
+  sensoryMode     String   @default("full")    // "full" | "gentle" | "low"
+  activeCompanion String   @default("The Listener")
+  onboardingJson  Json?
+  calmDnaJson     Json?
+  audioPrefsJson  Json?
+  updatedAt       DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+// -----------------------------------------------------------------------------
+// 4. Privacy & Consent Registry
+// -----------------------------------------------------------------------------
+model UserConsent {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiMemoryEnabled  Boolean  @default(true)
+  cloudSyncEnabled Boolean  @default(true)
+  privacyVersion   String   @default("2026.1")
+  consentedAt      DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("user_consents")
+}
+
+// -----------------------------------------------------------------------------
+// 5. Emotional Check-Ins (Russell Circumplex + Somatic Tags)
+// -----------------------------------------------------------------------------
+model EmotionalCheckIn {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId        String    @unique // Client-generated unique UUID for conflict-free sync
+  emotionId       String?
+  emoji           String?
+  emotionLabel    String?
+  intensity       Int?
+  pleasantness    Float     @default(50.0) // orb.x
+  energy          Float     @default(52.0) // orb.y
+  auraTitle       String    @default("Softly Grounded")
+  somaticCues     String[]
+  note            String?
+  reaction        String?
+  recordedAt      DateTime  @default(now())
+  clientUpdatedAt DateTime  @default(now())
+  deletedAt       DateTime?
+
+  @@index([userId, recordedAt])
+  @@index([userId, clientUpdatedAt])
+  @@map("emotional_check_ins")
+}
+
+// -----------------------------------------------------------------------------
+// 6. Sleep & Bio-Rhythm Telemetry
+// -----------------------------------------------------------------------------
+model SleepRecoveryLog {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sleepHours   Float    @default(7.0)
+  sleepQuality String   @default("rested") // "rested" | "fragmented" | "exhausted"
+  rhythmNote   String?
+  loggedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, loggedAt])
+  @@map("sleep_recovery_logs")
+}
+
+// -----------------------------------------------------------------------------
+// 7. 3D Garden State & Sanctuary Customizations
+// -----------------------------------------------------------------------------
+model GardenProgress {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  atmospherePreset String   @default("twilight") // "twilight" | "rose" | "celestial" | "dawn"
+  wishLanternCount Int      @default(0)
+  objectsJson      Json?
+  updatedAt        DateTime @updatedAt
+
+  @@map("garden_progress")
+}
+
+// -----------------------------------------------------------------------------
+// 8. Star Jar Gratitude & Anchor Notes
+// -----------------------------------------------------------------------------
+model StarJarMemory {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String    @unique
+  text      String
+  emoji     String?
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@map("star_jar_memories")
+}
+
+// -----------------------------------------------------------------------------
+// 9. Time-Locked Sealed Letters
+// -----------------------------------------------------------------------------
+model SealedLetter {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String    @unique
+  title     String?
+  body      String
+  openDate  DateTime
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([userId, openDate])
+  @@map("sealed_letters")
+}
+
+// -----------------------------------------------------------------------------
+// 10. User-Approved Semantic Memories (Explicit Memory Vault)
+// -----------------------------------------------------------------------------
+model UserApprovedMemory {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId     String    @unique
+  text         String
+  category     String    @default("anchor") // "anchor"|"trigger"|"preference"|"context"|"coping"|"reflection"|"boundary"
+  sharedWithAi Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([userId, createdAt])
+  @@map("user_approved_memories")
+}
+
+// -----------------------------------------------------------------------------
+// 11. Companion AI Conversation Turns
+// -----------------------------------------------------------------------------
+model CompanionMessageRecord {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String   @unique
+  persona   String   // "The Listener" | "The Grounder" | "The Guide" | "Boundary Coach"
+  role      String   // "user" | "companion"
+  provider  String   @default("gemini") // "gemini" | "local"
+  text      String
+  reaction  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("companion_messages")
+}
+
+// -----------------------------------------------------------------------------
+// 12. 30-Day Journey Progression & Synthesized Insights
+// -----------------------------------------------------------------------------
+model JourneyAndInsightState {
+  id                     String   @id @default(uuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exploredDays           Int[]    @default([])
+  dayReflectionsJson     Json?
+  weeklyNotesJson        Json?
+  reminderPref           String   @default("Off")
+  latestAiReflectionJson Json?
+  updatedAt              DateTime @updatedAt
+
+  @@map("journey_and_insight_states")
+}
+
+// -----------------------------------------------------------------------------
+// 13. Privacy & Compliance Audit Trail
+// -----------------------------------------------------------------------------
+model DataPrivacyAuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType  String   // "EXPORT" | "DELETE_ALL" | "CONSENT_CHANGE"
+  platform    String   // "web" | "android"
+  executedAt  DateTime @default(now())
+
+  @@index([userId, executedAt])
+  @@map("data_privacy_audit_logs")
+}

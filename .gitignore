@@ -7,6 +7,7 @@
 /.next/
 /out/
 /build
+.api-build-stash
 
 # Misc & OS
 .DS_Store
@@ -22,6 +23,11 @@ yarn-error.log*
 # Local Env Secrets
 .env
 .env*.local
+
+# Android Keystore & Signing Secrets
+*.jks
+*.keystore
+keystore.properties
 
 # Vercel
 .vercel

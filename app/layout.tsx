@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   description:
     'LUMINA · A bio-adaptive 3D emotional sanctuary, empathetic AI listener, and private somatic refuge powered by RaaOS Engine (Crafted by Rudra).',
   generator: 'RaaOS Engine',
+  manifest: '/manifest.json',
   icons: {
     icon: [
       {
@@ -28,11 +29,13 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
-  ],
+  colorScheme: 'dark',
+  themeColor: '#060712',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({

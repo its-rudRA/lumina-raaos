@@ -39,6 +39,12 @@ import {
   type WellnessProfilePreferences,
 } from '@/lib/db'
 import { triggerPortalTransition } from '@/components/sanctuary-cinematics'
+import { resolveApiUrl } from '@/lib/api-client'
+import {
+  performSync,
+  registerSyncListeners,
+  type SyncStatus,
+} from '@/lib/sync-engine'
 
 export type Orb = { x: number; y: number }
 export type SensoryMode = 'full' | 'gentle' | 'low'
@@ -328,7 +334,10 @@ export interface SanctuaryContextValue {
     themeMode?: ThemeMode
   }) => Promise<void>
 
-  // data sovereignty
+  // data sovereignty & cloud sync
+  syncStatus: SyncStatus
+  lastSyncedAt: number | null
+  triggerManualSync: () => Promise<void>
   exportData: () => Promise<SanctuaryExport>
   eraseAllData: () => Promise<void>
 }
@@ -360,6 +369,20 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const [rainPlaying, setRainPlaying] = useState(false)
   const [rainSeconds, setRainSeconds] = useState(0)
   const audioRef = useRef<AudioEngine | null>(null)
+
+  // Cloud sync state (Milestone 17D)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const v = window.localStorage.getItem('lumina_last_synced_at')
+      return v ? parseInt(v, 10) : null
+    } catch {
+      return null
+    }
+  })
+  const isSyncingRef = useRef(false)
+  const triggerManualSyncRef = useRef<(() => Promise<void>) | null>(null)
 
   // Always-fresh mirror so async actions never read stale closures.
   const profileRef = useRef<ProfileData>(INITIAL_PROFILE)
@@ -453,7 +476,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       }
       moduleAiChecked = true
       try {
-        const res = await fetch('/api/companion', { method: 'GET' })
+        const res = await fetch(resolveApiUrl('/api/companion'), { method: 'GET' })
         if (!res.ok) {
           if (!cancelled) setAiStatus('local')
           return
@@ -528,6 +551,9 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       } finally {
         if (!cancelled) {
           setIsHydrated(true)
+          window.setTimeout(() => {
+            void triggerManualSyncRef.current?.()
+          }, 800)
         }
       }
     }
@@ -586,6 +612,27 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     if (!rainPlaying) return
     const id = window.setInterval(() => setRainSeconds(s => s + 1), 1000)
     return () => window.clearInterval(id)
+  }, [rainPlaying])
+
+  // Android & Web Audio Lifecycle: suspend AudioContext when tab or app is backgrounded
+  useEffect(() => {
+    const handleVisibility = () => {
+      const engine = audioRef.current
+      if (!engine?.ctx) return
+      if (document.hidden) {
+        if (engine.ctx.state === 'running') {
+          engine.ctx.suspend().catch(() => {})
+        }
+      } else {
+        if (engine.ctx.state === 'suspended' && rainPlaying) {
+          engine.ctx.resume().catch(() => {})
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [rainPlaying])
 
   useEffect(() => {
@@ -995,7 +1042,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
         // Attempt real server-side Gemini 2.5 Flash call if online
         if (typeof navigator === 'undefined' || navigator.onLine) {
           try {
-            const res = await fetch('/api/companion', {
+            const res = await fetch(resolveApiUrl('/api/companion'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1104,7 +1151,7 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     let reflection: SanctuaryReflection | null = null
 
     try {
-      const res = await fetch('/api/companion', {
+      const res = await fetch(resolveApiUrl('/api/companion'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1212,12 +1259,88 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     [update]
   )
 
-  // ---- Data sovereignty --------------------------------------------------
+  // ---- Cloud Sync & Data Sovereignty (Milestone 17D) -------------------
+  const triggerManualSync = useCallback(async () => {
+    if (isSyncingRef.current) return
+    isSyncingRef.current = true
+    setSyncStatus('syncing')
+    try {
+      const current = profileRef.current
+      const currentState: SanctuaryState = {
+        key: 'current_user',
+        name: current.name,
+        pronouns: current.pronouns,
+        gardenBlooms: current.gardenBlooms,
+        lastOrb: current.lastOrb ?? DEFAULT_ORB,
+        preferredCompanion: current.preferredCompanion,
+        memories: current.memories ?? [],
+        aiMemoryEnabled: current.aiMemoryEnabled ?? true,
+        bioRhythm: current.bioRhythm ?? DEFAULT_BIO_RHYTHM,
+        authUser: current.authUser ?? null,
+        onboarding: current.onboarding ?? DEFAULT_ONBOARDING,
+        companionHistory: current.companionHistory ?? [],
+        journeyCompletedDays: current.journeyCompletedDays ?? [],
+        journeyReflections: current.journeyReflections ?? {},
+        journeyWeeklyNotes: current.journeyWeeklyNotes ?? {},
+        journeyReminder: current.journeyReminder,
+        cinemaReelReaction: current.cinemaReelReaction,
+        sensoryMode: current.sensoryMode ?? 'full',
+        themeMode: current.themeMode ?? 'night',
+        starJar: current.starJar ?? [],
+        insightReflection: current.insightReflection ?? null,
+      }
+      const res = await performSync(currentState, checkInsRef.current, sealedLetters)
+      setSyncStatus(res.status)
+      if (res.ok && res.status === 'synced' && res.mergedState) {
+        applyProfile(res.mergedState)
+        if (res.mergedCheckIns) {
+          checkInsRef.current = res.mergedCheckIns
+          setCheckIns(res.mergedCheckIns)
+        }
+        if (res.mergedLetters) {
+          setSealedLetters(res.mergedLetters)
+        }
+        const now = Date.now()
+        setLastSyncedAt(now)
+      }
+    } catch {
+      setSyncStatus('error')
+    } finally {
+      isSyncingRef.current = false
+    }
+  }, [applyProfile, sealedLetters])
+
+  useEffect(() => {
+    triggerManualSyncRef.current = triggerManualSync
+  }, [triggerManualSync])
+
+  useEffect(() => {
+    const cleanup = registerSyncListeners(
+      (status) => setSyncStatus(status),
+      () => {
+        void triggerManualSyncRef.current?.()
+      }
+    )
+    return cleanup
+  }, [])
+
   const exportData = useCallback(() => exportSanctuaryData(), [])
 
   const eraseAllData = useCallback(async () => {
     stopRain()
     setRainSeconds(0)
+    // Cloud purge if configured
+    try {
+      await fetch(resolveApiUrl('/api/sync'), { method: 'DELETE' })
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('lumina_last_synced_at')
+        localStorage.removeItem('lumina_sync_outbox')
+      }
+    } catch {
+      // best-effort
+    }
+    setSyncStatus('idle')
+    setLastSyncedAt(null)
     await clearSanctuaryData()
     applyProfile(INITIAL_PROFILE)
     checkInsRef.current = []
@@ -1231,74 +1354,131 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   const orb = profile.lastOrb ?? DEFAULT_ORB
   const aura = useMemo(() => deriveAura(orb), [orb])
 
-  const value: SanctuaryContextValue = {
-    isHydrated,
-    isLoading: !isHydrated,
-    aiStatus,
-    aiThinking,
-    aiMemoryEnabled: profile.aiMemoryEnabled ?? true,
-    insightReflection: profile.insightReflection ?? null,
-    insightGenerating,
-    authUser: profile.authUser ?? null,
-    onboarding: profile.onboarding ?? DEFAULT_ONBOARDING,
-    name: profile.name,
-    pronouns: profile.pronouns,
-    gardenBlooms: profile.gardenBlooms,
-    orb,
-    aura,
-    companion: profile.preferredCompanion,
-    checkIns,
-    sealedLetters,
-    companionHistory: profile.companionHistory ?? [],
-    memories: profile.memories ?? [],
-    bioRhythm: profile.bioRhythm ?? DEFAULT_BIO_RHYTHM,
-    journeyCompletedDays: profile.journeyCompletedDays ?? [],
-    journeyReflections: profile.journeyReflections ?? {},
-    journeyWeeklyNotes: profile.journeyWeeklyNotes ?? {},
-    journeyReminder: profile.journeyReminder ?? 'Off',
-    cinemaReelReaction: profile.cinemaReelReaction ?? '',
-    sensoryMode: profile.sensoryMode ?? 'full',
-    themeMode: profile.themeMode ?? 'night',
-    starJar: profile.starJar ?? [],
-    crisisAlert,
-    dismissCrisisAlert,
-    rainPlaying,
-    rainSeconds,
-    toggleRain,
-    resetRain,
-    registerUser,
-    signInUser,
-    continueAsGuest,
-    signOutUser,
-    updateOnboarding,
-    saveWellnessProfile,
-    resetTutorial,
-    setOrb,
-    setCompanion,
-    plantCheckIn,
-    reactToCheckIn,
-    sealLetter,
-    addStarJarNote,
-    removeStarJarNote,
-    sendCompanionThought,
-    reactToCompanionMessage,
-    generateSanctuaryReflection,
-    reactToInsightReflection,
-    addMemory,
-    editMemory,
-    toggleMemoryShare,
-    setAiMemoryEnabled,
-    removeMemory,
-    updateBioRhythm,
-    toggleJourneyDay,
-    saveJourneyDayReflection,
-    saveJourneyWeeklyNote,
-    setJourneyReminder,
-    setCinemaReelReaction,
-    updateProfileSettings,
-    exportData,
-    eraseAllData,
-  }
+  const value: SanctuaryContextValue = useMemo(
+    () => ({
+      isHydrated,
+      isLoading: !isHydrated,
+      aiStatus,
+      aiThinking,
+      aiMemoryEnabled: profile.aiMemoryEnabled ?? true,
+      insightReflection: profile.insightReflection ?? null,
+      insightGenerating,
+      authUser: profile.authUser ?? null,
+      onboarding: profile.onboarding ?? DEFAULT_ONBOARDING,
+      name: profile.name,
+      pronouns: profile.pronouns,
+      gardenBlooms: profile.gardenBlooms,
+      orb,
+      aura,
+      companion: profile.preferredCompanion,
+      checkIns,
+      sealedLetters,
+      companionHistory: profile.companionHistory ?? [],
+      memories: profile.memories ?? [],
+      bioRhythm: profile.bioRhythm ?? DEFAULT_BIO_RHYTHM,
+      journeyCompletedDays: profile.journeyCompletedDays ?? [],
+      journeyReflections: profile.journeyReflections ?? {},
+      journeyWeeklyNotes: profile.journeyWeeklyNotes ?? {},
+      journeyReminder: profile.journeyReminder ?? 'Off',
+      cinemaReelReaction: profile.cinemaReelReaction ?? '',
+      sensoryMode: profile.sensoryMode ?? 'full',
+      themeMode: profile.themeMode ?? 'night',
+      starJar: profile.starJar ?? [],
+      crisisAlert,
+      dismissCrisisAlert,
+      rainPlaying,
+      rainSeconds,
+      toggleRain,
+      resetRain,
+      registerUser,
+      signInUser,
+      continueAsGuest,
+      signOutUser,
+      updateOnboarding,
+      saveWellnessProfile,
+      resetTutorial,
+      setOrb,
+      setCompanion,
+      plantCheckIn,
+      reactToCheckIn,
+      sealLetter,
+      addStarJarNote,
+      removeStarJarNote,
+      sendCompanionThought,
+      reactToCompanionMessage,
+      generateSanctuaryReflection,
+      reactToInsightReflection,
+      addMemory,
+      editMemory,
+      toggleMemoryShare,
+      setAiMemoryEnabled,
+      removeMemory,
+      updateBioRhythm,
+      toggleJourneyDay,
+      saveJourneyDayReflection,
+      saveJourneyWeeklyNote,
+      setJourneyReminder,
+      setCinemaReelReaction,
+      updateProfileSettings,
+      syncStatus,
+      lastSyncedAt,
+      triggerManualSync,
+      exportData,
+      eraseAllData,
+    }),
+    [
+      isHydrated,
+      aiStatus,
+      aiThinking,
+      profile,
+      insightGenerating,
+      orb,
+      aura,
+      checkIns,
+      sealedLetters,
+      crisisAlert,
+      dismissCrisisAlert,
+      rainPlaying,
+      rainSeconds,
+      toggleRain,
+      resetRain,
+      registerUser,
+      signInUser,
+      continueAsGuest,
+      signOutUser,
+      updateOnboarding,
+      saveWellnessProfile,
+      resetTutorial,
+      setOrb,
+      setCompanion,
+      plantCheckIn,
+      reactToCheckIn,
+      sealLetter,
+      addStarJarNote,
+      removeStarJarNote,
+      sendCompanionThought,
+      reactToCompanionMessage,
+      generateSanctuaryReflection,
+      reactToInsightReflection,
+      addMemory,
+      editMemory,
+      toggleMemoryShare,
+      setAiMemoryEnabled,
+      removeMemory,
+      updateBioRhythm,
+      toggleJourneyDay,
+      saveJourneyDayReflection,
+      saveJourneyWeeklyNote,
+      setJourneyReminder,
+      setCinemaReelReaction,
+      updateProfileSettings,
+      syncStatus,
+      lastSyncedAt,
+      triggerManualSync,
+      exportData,
+      eraseAllData,
+    ]
+  )
 
   return <SanctuaryContext.Provider value={value}>{children}</SanctuaryContext.Provider>
 }

@@ -489,10 +489,18 @@ export function SanctuaryScene({
       alpha: true,
       powerPreference: 'high-performance',
     })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    const isMobileViewport =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
+    renderer.setPixelRatio(
+      isMobileViewport
+        ? Math.min(window.devicePixelRatio || 1, 1.5)
+        : Math.min(window.devicePixelRatio || 1, 2)
+    )
     renderer.setSize(width, height)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
+    renderer.domElement.style.touchAction = 'none'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
 
@@ -945,6 +953,11 @@ export function SanctuaryScene({
         metalness: 0.1,
       })
     )
+    const sharedHeartMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xffeec2,
+      })
+    )
 
     interface LotusEntry {
       index: number
@@ -1043,12 +1056,7 @@ export function SanctuaryScene({
         innerPivots.push(pivot)
       }
 
-      const heartMat = trackMat(
-        new THREE.MeshBasicMaterial({
-          color: 0xffeec2,
-        })
-      )
-      const heart = new THREE.Mesh(heartGeo, heartMat)
+      const heart = new THREE.Mesh(heartGeo, sharedHeartMat)
       heart.position.y = 0.08
       lotusGroup.add(heart)
 
@@ -1520,7 +1528,9 @@ export function SanctuaryScene({
     }
     motionQuery?.addEventListener?.('change', onMotionPrefChange)
 
-    const animate = () => {
+    let lastSceneFrameTime = performance.now()
+
+    const animate = (now: number) => {
       if (isTabHidden) {
         frameId = 0
         return
@@ -1531,6 +1541,21 @@ export function SanctuaryScene({
       const domSensory =
         typeof document !== 'undefined' ? document.documentElement.dataset.sensory : undefined
       const effectiveSensory = state.sensoryMode || domSensory || 'full'
+
+      // Adaptive FPS frame pacing: 60 FPS (16.5ms) in full, 36 FPS (27.5ms) in gentle, 24 FPS (41ms) in low
+      const frameInterval =
+        effectiveSensory === 'low'
+          ? 41
+          : effectiveSensory === 'gentle'
+            ? 27.5
+            : 16.5
+
+      const deltaSinceLast = now - lastSceneFrameTime
+      if (deltaSinceLast < frameInterval) {
+        return
+      }
+      lastSceneFrameTime = now - (deltaSinceLast % frameInterval)
+
       const isLowMotion = state.prefersReducedMotion || effectiveSensory === 'low'
       const isGentleMotion = !isLowMotion && effectiveSensory === 'gentle'
       const motionScale = isLowMotion ? 0.14 : isGentleMotion ? 0.55 : 1.0
@@ -1951,6 +1976,7 @@ export function SanctuaryScene({
       } else {
         // Discard accumulated hidden tab delta and resume smoothly
         clock.getDelta()
+        lastSceneFrameTime = performance.now()
         if (!frameId) {
           frameId = window.requestAnimationFrame(animate)
         }
@@ -2096,7 +2122,7 @@ export function SanctuaryScene({
         </>
       )}
 
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className="h-full w-full touch-none select-none" />
     </div>
   )
 }

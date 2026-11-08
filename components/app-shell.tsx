@@ -64,8 +64,13 @@ const ROOM_AURORA_COLORS: Record<string, string> = {
   '/settings': 'linear-gradient(90deg, transparent, rgba(143,160,181,0.55), rgba(126,200,184,0.45), transparent)',
 }
 
-const PRIMARY_MOBILE = NAV_ITEMS.slice(0, 4)
-const MORE_MOBILE = NAV_ITEMS.slice(4)
+// 5 Core Tabs for Mobile & Android Bottom Bar: Home, Garden, Check-In, Companion + Menu Drawer
+const MOBILE_QUICK_TABS: NavItem[] = [
+  NAV_ITEMS[0], // Home
+  NAV_ITEMS[1], // Garden
+  NAV_ITEMS[2], // Check-In
+  NAV_ITEMS[4], // Soul Companion
+]
 
 const SENSORY: Array<{ id: SensoryMode; label: string }> = [
   { id: 'full', label: 'Full sanctuary' },
@@ -116,6 +121,17 @@ export function AppShell({
   const [supportOpen, setSupportOpen] = useState(false)
   const [breathOpen, setBreathOpen] = useState(false)
   const [replayLogoIntro, setReplayLogoIntro] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(true)
+
+  // Track desktop viewport width cleanly for sidebar padding (min-width: 1024px)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    setIsDesktop(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const ready = isHydrated && !isLoading
 
@@ -140,18 +156,82 @@ export function AppShell({
     setMoreOpen(false)
   }, [pathname])
 
-  if (!ready || !authUser) {
-    return <LuminaLoader />
-  }
-
   function closeSupport() {
     setSupportOpen(false)
     dismissCrisisAlert()
   }
 
+  // Native Android Hardware Back-Button Hook (Capacitor & Cordova Android shells only)
+  useEffect(() => {
+    // Capacitor Android native back button hook
+    const capacitorApp = (window as unknown as {
+      Capacitor?: {
+        Plugins?: {
+          App?: {
+            addListener?: (
+              event: string,
+              callback: (data: { canGoBack: boolean }) => void
+            ) => { remove: () => void }
+          }
+        }
+      }
+    })?.Capacitor?.Plugins?.App
+
+    let capListenerRemove: (() => void) | undefined
+    if (capacitorApp?.addListener) {
+      const listener = capacitorApp.addListener('backButton', ({ canGoBack }) => {
+        if (supportOpen) {
+          closeSupport()
+          return
+        }
+        if (breathOpen) {
+          setBreathOpen(false)
+          return
+        }
+        if (moreOpen) {
+          setMoreOpen(false)
+          return
+        }
+        if (pathname !== '/home' && pathname !== '/welcome') {
+          router.push('/home')
+          return
+        }
+        if (!canGoBack) {
+          (window as unknown as { Capacitor?: { Plugins?: { App?: { exitApp?: () => void } } } })
+            ?.Capacitor?.Plugins?.App?.exitApp?.()
+        }
+      })
+      capListenerRemove = listener.remove
+    }
+
+    // Android Cordova / WebView backbutton event
+    const handleCordovaBackButton = (e: Event) => {
+      if (supportOpen || breathOpen || moreOpen) {
+        e.preventDefault()
+        if (supportOpen) closeSupport()
+        else if (breathOpen) setBreathOpen(false)
+        else if (moreOpen) setMoreOpen(false)
+      } else if (pathname !== '/home' && pathname !== '/welcome') {
+        e.preventDefault()
+        router.push('/home')
+      }
+    }
+
+    document.addEventListener('backbutton', handleCordovaBackButton as EventListener)
+
+    return () => {
+      document.removeEventListener('backbutton', handleCordovaBackButton as EventListener)
+      if (capListenerRemove) capListenerRemove()
+    }
+  }, [supportOpen, breathOpen, moreOpen, pathname, router])
+
+  if (!ready || !authUser) {
+    return <LuminaLoader />
+  }
+
   const displayName = name.trim().split(/\s+/)[0] || authUser?.name || 'Friend'
   const isGuest = authUser?.mode === 'guest'
-  const moreActive = MORE_MOBILE.some(i => isActive(pathname, i.href))
+  const isMoreTabActive = !MOBILE_QUICK_TABS.some(tab => isActive(pathname, tab.href))
   const activeSweepGradient =
     ROOM_AURORA_COLORS[pathname] || ROOM_AURORA_COLORS['/home']
 
@@ -185,6 +265,7 @@ export function AppShell({
           type="button"
           onClick={() => setReplayLogoIntro(true)}
           title="Replay LUMINA Sanctuary Cinematic Intro"
+          aria-label="Replay LUMINA Sanctuary Cinematic Intro"
           className={`group flex items-center gap-2.5 px-4 pt-3.5 pb-2 text-left transition hover:opacity-95 ${
             collapsed ? 'justify-center' : ''
           }`}
@@ -314,19 +395,16 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* PHYSICAL DESKTOP SIDEBAR SPACER — Guarantees main column NEVER slides under sidebar */}
-      <div
-        aria-hidden="true"
-        style={{
-          width: collapsed ? '76px' : '272px',
-          minWidth: collapsed ? '76px' : '272px',
-        }}
-        className="hidden shrink-0 transition-[width,min-width] duration-300 lg:block"
-      />
-
       {/* MAIN COLUMN */}
-      <div className="relative z-10 flex min-h-screen min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.09] bg-[#080a13]/88 px-4 pb-4 pt-6 backdrop-blur-xl sm:px-8 sm:pb-5 sm:pt-7">
+      <div
+        className="relative z-10 flex min-h-screen flex-col transition-[padding-left] duration-300 ease-out"
+        style={{
+          paddingLeft: isDesktop ? (collapsed ? '76px' : '272px') : '0px',
+          width: '100%',
+          maxWidth: '100%',
+        }}
+      >
+        <header className="sticky top-0 z-20 flex w-full flex-wrap items-center justify-between gap-3 border-b border-white/[0.09] bg-[#080a13]/88 px-4 pb-4 pt-6 backdrop-blur-xl sm:px-8 sm:pb-5 sm:pt-7">
           <div className="min-w-0">
             {title ? (
               <>
@@ -345,6 +423,7 @@ export function AppShell({
               onClick={() => setReplayLogoIntro(true)}
               className="font-serif text-base tracking-[0.22em] text-white lg:hidden"
               title="Replay LUMINA Cinematic Intro"
+              aria-label="Replay LUMINA Cinematic Intro"
             >
               {!title && 'LUMINA'}
             </button>
@@ -362,11 +441,19 @@ export function AppShell({
                 </button>
               ))}
             </div>
-            <button onClick={() => setBreathOpen(true)} className="support-button">
+            <button
+              onClick={() => setBreathOpen(true)}
+              className="support-button"
+              aria-label="60s Breath Reset"
+            >
               <Wind size={13} />
               <span className="hidden sm:inline">60s Breath</span>
             </button>
-            <button onClick={() => setSupportOpen(true)} className="support-button">
+            <button
+              onClick={() => setSupportOpen(true)}
+              className="support-button"
+              aria-label="Immediate Support & Crisis Resources"
+            >
               <ShieldAlert size={14} />
               <span className="hidden sm:inline">Immediate support</span>
             </button>
@@ -375,7 +462,7 @@ export function AppShell({
 
         <main
           key={pathname}
-          className="lumina-room-transition relative mx-auto w-full max-w-[1440px] flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-12"
+          className="lumina-room-transition relative mx-auto w-full max-w-[1440px] flex-1 px-4 pb-24 pt-5 sm:px-6 lg:px-8 lg:pb-12"
         >
           {/* Ambient Room-Specific Aurora Sweep on Route Transition */}
           <div
@@ -391,26 +478,31 @@ export function AppShell({
         </main>
       </div>
 
-      {/* MOBILE BOTTOM NAV */}
+      {/* MOBILE BOTTOM NAV DOCK (5 Core Tabs: Home, Garden, Check-In, Companion, Menu) */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.09] bg-[#0a0c14]/85 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-2xl lg:hidden"
-        aria-label="Primary"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.09] bg-[#0a0c14]/90 px-2 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 backdrop-blur-2xl lg:hidden"
+        aria-label="Mobile navigation"
       >
         <ul className="mx-auto flex max-w-md items-stretch justify-between">
-          {PRIMARY_MOBILE.map(item => {
+          {MOBILE_QUICK_TABS.map(item => {
             const active = isActive(pathname, item.href)
             const Icon = item.icon
             return (
               <li key={item.href} className="flex-1">
                 <Link
                   href={item.href}
+                  prefetch={false}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] ${
-                    active ? 'text-[#f4d9e2]' : 'text-white/45'
+                  className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] transition-colors ${
+                    active ? 'font-medium text-[#f4d9e2]' : 'text-white/45 hover:text-white/70'
                   }`}
                 >
-                  <Icon size={18} strokeWidth={1.5} />
-                  {item.href === '/check-in' ? 'Check-In' : item.href === '/garden' ? 'Garden' : item.label.replace('Soul ', '')}
+                  <Icon
+                    size={18}
+                    strokeWidth={active ? 2 : 1.5}
+                    className={active ? 'text-[#edb4c5] drop-shadow-[0_0_8px_rgba(237,180,197,0.5)]' : ''}
+                  />
+                  <span>{item.label.replace('Soul ', '')}</span>
                 </Link>
               </li>
             )
@@ -419,50 +511,62 @@ export function AppShell({
             <button
               onClick={() => setMoreOpen(true)}
               aria-expanded={moreOpen}
-              className={`flex w-full flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] ${
-                moreActive ? 'text-[#f4d9e2]' : 'text-white/45'
+              className={`flex w-full flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] transition-colors ${
+                isMoreTabActive ? 'font-medium text-[#f4d9e2]' : 'text-white/45 hover:text-white/70'
               }`}
             >
-              <Menu size={18} strokeWidth={1.5} />
-              More
+              <Menu
+                size={18}
+                strokeWidth={isMoreTabActive ? 2 : 1.5}
+                className={isMoreTabActive ? 'text-[#edb4c5] drop-shadow-[0_0_8px_rgba(237,180,197,0.5)]' : ''}
+              />
+              <span>Menu</span>
             </button>
           </li>
         </ul>
       </nav>
 
+      {/* FULL 10-ROOM MOBILE SLIDE-OVER DRAWER */}
       {moreOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="More rooms">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Sanctuary Navigation Menu">
           <button
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setMoreOpen(false)}
-            aria-label="Close more rooms"
+            aria-label="Close menu drawer"
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-[28px] border border-white/[0.1] bg-[#0d0f19]/95 p-5 pb-[max(env(safe-area-inset-bottom),20px)] backdrop-blur-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="eyebrow">More rooms</p>
+          <div className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-[28px] border border-white/[0.1] bg-[#0d0f19]/96 p-5 pb-[max(env(safe-area-inset-bottom),24px)] backdrop-blur-2xl">
+            <div className="mb-3.5 flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <p className="font-serif text-sm tracking-[0.16em] text-white">LUMINA SANCTUARY</p>
+                <span className="rounded-full border border-[#f3d9a4]/30 bg-[#f3d9a4]/10 px-1.5 py-0.2 text-[7.5px] font-medium tracking-[0.14em] text-[#f3d9a4] uppercase">
+                  RaaOS
+                </span>
+              </div>
               <button onClick={() => setMoreOpen(false)} className="icon-button" aria-label="Close">
-                <X size={14} />
+                <X size={15} />
               </button>
             </div>
             <ul className="grid gap-2">
-              {MORE_MOBILE.map(item => {
+              {NAV_ITEMS.map(item => {
                 const active = isActive(pathname, item.href)
                 const Icon = item.icon
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                      prefetch={false}
+                      onClick={() => setMoreOpen(false)}
+                      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${
                         active
-                          ? 'border-[#e1acc1]/35 bg-[#daa9c2]/12 text-white'
-                          : 'border-white/[0.07] bg-white/[0.03] text-white/70'
+                          ? 'border-[#e1acc1]/40 bg-[#daa9c2]/16 text-white shadow-[0_0_18px_rgba(218,169,194,0.18)]'
+                          : 'border-white/[0.07] bg-white/[0.03] text-white/70 hover:bg-white/[0.06] hover:text-white'
                       }`}
                     >
-                      <Icon size={18} strokeWidth={1.5} className={active ? 'text-[#edb4c5]' : ''} />
-                      <span>
-                        <span className="block text-sm">{item.label}</span>
+                      <Icon size={19} strokeWidth={1.5} className={`shrink-0 ${active ? 'text-[#edb4c5]' : 'text-white/60'}`} />
+                      <div className="min-w-0">
+                        <span className="block text-sm font-medium">{item.label}</span>
                         <span className="block text-[11px] text-white/40">{item.subtitle}</span>
-                      </span>
+                      </div>
                     </Link>
                   </li>
                 )

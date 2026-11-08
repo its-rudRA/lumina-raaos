@@ -1,26 +1,122 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    @media (prefers-color-scheme: light) {
-      .background { fill: black; }
-      .foreground { fill: white; }
-    }
-    @media (prefers-color-scheme: dark) {
-      .background { fill: white; }
-      .foreground { fill: black; }
-    }
-  </style>
-  <g clip-path="url(#clip0_7960_43945)">
-    <rect class="background" width="180" height="180" rx="37" />
-    <g style="transform: scale(95%); transform-origin: center">
-      <path class="foreground"
-        d="M101.141 53H136.632C151.023 53 162.689 64.6662 162.689 79.0573V112.904H148.112V79.0573C148.112 78.7105 148.098 78.3662 148.072 78.0251L112.581 112.898C112.701 112.902 112.821 112.904 112.941 112.904H148.112V126.672H112.941C98.5504 126.672 86.5638 114.891 86.5638 100.5V66.7434H101.141V100.5C101.141 101.15 101.191 101.792 101.289 102.422L137.56 66.7816C137.255 66.7563 136.945 66.7434 136.632 66.7434H101.141V53Z" />
-      <path class="foreground"
-        d="M65.2926 124.136L14 66.7372H34.6355L64.7495 100.436V66.7372H80.1365V118.47C80.1365 126.278 70.4953 129.958 65.2926 124.136Z" />
-    </g>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <clipPath id="clip0_7960_43945">
-      <rect width="180" height="180" fill="white" />
-    </clipPath>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#1e1035" />
+      <stop offset="60%" stop-color="#0d081c" />
+      <stop offset="100%" stop-color="#060712" />
+    </radialGradient>
+
+    <!-- Celestial Aura Glow -->
+    <radialGradient id="auraGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#c084fc" stop-opacity="0.55" />
+      <stop offset="45%" stop-color="#ec4899" stop-opacity="0.25" />
+      <stop offset="75%" stop-color="#38bdf8" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#060712" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Central Core Glow -->
+    <radialGradient id="starCore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fffbeb" />
+      <stop offset="25%" stop-color="#fef08a" />
+      <stop offset="65%" stop-color="#f59e0b" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#ec4899" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Outer Petals Gradient -->
+    <linearGradient id="petalOuter" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#4c1d95" stop-opacity="0.7" />
+      <stop offset="60%" stop-color="#a855f7" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#f472b6" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Mid Petals Gradient -->
+    <linearGradient id="petalMid" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#701a75" stop-opacity="0.75" />
+      <stop offset="60%" stop-color="#c084fc" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#fbcfe8" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Inner Petals Gradient -->
+    <linearGradient id="petalInner" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#9333ea" stop-opacity="0.8" />
+      <stop offset="50%" stop-color="#e879f9" />
+      <stop offset="100%" stop-color="#ffffff" />
+    </linearGradient>
+
+    <!-- Ring Gradient -->
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.7" />
+      <stop offset="50%" stop-color="#c084fc" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.6" />
+    </linearGradient>
+
+    <!-- Filter for Glow -->
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
   </defs>
+
+  <!-- Deep Sanctuary Background -->
+  <rect width="512" height="512" fill="url(#bgGrad)" />
+
+  <!-- Outer Atmospheric Aura -->
+  <circle cx="256" cy="256" r="230" fill="url(#auraGlow)" />
+
+  <!-- Astrolabe Celestial Orbit Rings -->
+  <g stroke="url(#ringGrad)" fill="none" opacity="0.65">
+    <ellipse cx="256" cy="256" rx="190" ry="85" stroke-width="1.2" transform="rotate(-25 256 256)" />
+    <ellipse cx="256" cy="256" rx="190" ry="85" stroke-width="1.2" transform="rotate(35 256 256)" />
+    <circle cx="256" cy="256" r="160" stroke-width="0.8" stroke-dasharray="3 7" opacity="0.4" />
+  </g>
+
+  <!-- Sanctuary Stars Sparkles -->
+  <circle cx="120" cy="140" r="1.5" fill="#fef08a" opacity="0.8" />
+  <circle cx="390" cy="130" r="2" fill="#fef08a" opacity="0.9" />
+  <circle cx="380" cy="370" r="1.5" fill="#fbcfe8" opacity="0.7" />
+  <circle cx="140" cy="360" r="2" fill="#38bdf8" opacity="0.8" />
+  <circle cx="256" cy="95" r="1.5" fill="#ffffff" opacity="0.85" />
+
+  <!-- Celestial Lotus Core Group -->
+  <g transform="translate(0, 16)" filter="url(#softGlow)">
+    <!-- Base Water Lily Pad / Foundation Glow -->
+    <ellipse cx="256" cy="290" rx="110" ry="24" fill="#6366f1" opacity="0.22" filter="blur(8px)" />
+
+    <!-- Layer 1: Outer Petals (Wide spread) -->
+    <!-- Far Left -->
+    <path d="M256 280 C210 270 140 250 140 215 C140 185 200 215 256 280 Z" fill="url(#petalOuter)" opacity="0.8" />
+    <!-- Far Right -->
+    <path d="M256 280 C302 270 372 250 372 215 C372 185 312 215 256 280 Z" fill="url(#petalOuter)" opacity="0.8" />
+    <!-- Mid Outer Left -->
+    <path d="M256 280 C215 255 165 210 175 170 C195 165 235 215 256 280 Z" fill="url(#petalOuter)" opacity="0.85" />
+    <!-- Mid Outer Right -->
+    <path d="M256 280 C297 255 347 210 337 170 C317 165 277 215 256 280 Z" fill="url(#petalOuter)" opacity="0.85" />
+
+    <!-- Layer 2: Mid Petals -->
+    <!-- Left Mid -->
+    <path d="M256 280 C225 240 195 180 215 140 C235 150 250 210 256 280 Z" fill="url(#petalMid)" opacity="0.9" />
+    <!-- Right Mid -->
+    <path d="M256 280 C287 240 317 180 297 140 C277 150 262 210 256 280 Z" fill="url(#petalMid)" opacity="0.9" />
+
+    <!-- Layer 3: Central Majestic Upright Petal -->
+    <path d="M256 280 C235 220 230 150 256 115 C282 150 277 220 256 280 Z" fill="url(#petalInner)" />
+
+    <!-- Inner Petal Highlights -->
+    <path d="M256 270 C242 225 244 175 256 140 C268 175 270 225 256 270 Z" fill="#ffffff" opacity="0.65" />
+    <path d="M256 275 C232 238 214 195 228 162 C236 185 246 230 256 275 Z" fill="#fbcfe8" opacity="0.45" />
+    <path d="M256 275 C280 238 298 195 284 162 C276 185 266 230 256 275 Z" fill="#fbcfe8" opacity="0.45" />
+
+    <!-- Golden Celestial Sanctuary Star Core -->
+    <circle cx="256" cy="235" r="28" fill="url(#starCore)" />
+
+    <!-- 8-Pointed Radiant Sparkle -->
+    <!-- Vertical and Horizontal Rays -->
+    <polygon points="256,192 260,231 299,235 260,239 256,278 252,239 213,235 252,231" fill="#fffbeb" />
+    <!-- Diagonal Rays -->
+    <polygon points="256,208 261,230 283,235 261,240 256,262 251,240 229,235 251,230" fill="#fef08a" opacity="0.85" transform="rotate(45 256 235)" />
+
+    <!-- Center Pearl -->
+    <circle cx="256" cy="235" r="4.5" fill="#ffffff" />
+  </g>
 </svg>
