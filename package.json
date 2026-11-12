@@ -9,10 +9,12 @@
     "start": "next start",
     "test": "node --no-warnings --experimental-strip-types tests/lumina-verification.test.ts",
     "verify:release": "node --no-warnings scripts/verify-release-readiness.mjs",
-    "build:android-web": "node --no-warnings scripts/build-android-web.mjs"
+    "build:android-web": "node --no-warnings scripts/build-android-web.mjs",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@prisma/client": "^6.5.0",
     "@types/three": "^0.187.0",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
@@ -32,6 +34,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "postcss": "^8.5",
+    "prisma": "^6.5.0",
     "tailwindcss": "^4.3.3",
     "typescript": "5.7.3"
   },

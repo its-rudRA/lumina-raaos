@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Check,
+  Cloud,
   Cpu,
+  Database,
   Download,
   Edit3,
   Eye,
@@ -14,6 +16,7 @@ import {
   LogOut,
   Moon,
   Plus,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Sparkles,
@@ -28,6 +31,7 @@ import {
   type SensoryMode,
 } from '@/context/sanctuary-context'
 import { glass, shortDate } from '@/lib/format'
+import { resolveApiUrl } from '@/lib/api-client'
 
 const MEMORY_CATEGORIES: Array<{ id: MemoryCategory; label: string }> = [
   { id: 'preference', label: 'Preference' },
@@ -70,6 +74,9 @@ function SettingsContent() {
     exportData,
     eraseAllData,
     signOutUser,
+    syncStatus,
+    lastSyncedAt,
+    triggerManualSync,
   } = useSanctuary()
 
   const [draftName, setDraftName] = useState(name)
@@ -78,6 +85,59 @@ function SettingsContent() {
   const [exported, setExported] = useState(false)
   const [confirmErase, setConfirmErase] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  // Cloud & Database Sync architecture probe state
+  const [healthData, setHealthData] = useState<{
+    status: string
+    subsystems?: {
+      aiCompanion: string
+      database: string
+      latencyMs?: number
+      privacyGuarantee: string
+    }
+    databaseStatus?: {
+      connected: boolean
+      mode: string
+      latencyMs?: number
+      message?: string
+    }
+  } | null>(null)
+  const [probingHealth, setProbingHealth] = useState(false)
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    async function probeHealth() {
+      setProbingHealth(true)
+      try {
+        const res = await fetch(resolveApiUrl('/api/health'))
+        if (res.ok && active) {
+          const json = await res.json()
+          setHealthData(json)
+        }
+      } catch {
+        // Safe offline / local fallback
+      } finally {
+        if (active) setProbingHealth(false)
+      }
+    }
+    void probeHealth()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  async function handleManualSyncClick() {
+    setSyncFeedback(null)
+    try {
+      await triggerManualSync()
+      setSyncFeedback('Sanctuary synchronized successfully!')
+      window.setTimeout(() => setSyncFeedback(null), 3000)
+    } catch {
+      setSyncFeedback('Sync finished. Saved safely to local outbox.')
+      window.setTimeout(() => setSyncFeedback(null), 3000)
+    }
+  }
 
   // Memory Vault inline management state
   const [newMemText, setNewMemText] = useState('')
@@ -239,6 +299,108 @@ function SettingsContent() {
           <Link href="/companion" className="secondary-button shrink-0 px-4 py-2 text-xs">
             <Sparkles size={13} /> Open Soul Companion
           </Link>
+        </div>
+      </Section>
+
+      {/* DATABASE & CLOUD SYNC ARCHITECTURE (POSTGRESQL + INDEXEDDB) */}
+      <Section title="Database & Cloud Sync Architecture (PostgreSQL + IndexedDB)">
+        <div className="rounded-2xl border border-white/[0.08] bg-black/25 p-4 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1.5 min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                    healthData?.databaseStatus?.connected
+                      ? 'border-[#7ec8b8]/50 bg-[#7ec8b8]/15 text-[#c8f3e9]'
+                      : 'border-[#b8a4e8]/45 bg-[#b8a4e8]/15 text-[#e2d8f8]'
+                  }`}
+                >
+                  <Database size={13} />
+                  {healthData?.databaseStatus?.connected
+                    ? `PostgreSQL Active (${healthData.databaseStatus.latencyMs ?? 0}ms)`
+                    : healthData?.subsystems?.database === 'postgres-configured-offline'
+                      ? 'PostgreSQL Configured (Offline)'
+                      : '100% Local-First IndexedDB Mode'}
+                </span>
+
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] ${
+                    syncStatus === 'synced'
+                      ? 'border-[#7ec8b8]/40 bg-[#7ec8b8]/10 text-[#c8f3e9]'
+                      : syncStatus === 'syncing'
+                        ? 'border-[#f3d9a4]/40 bg-[#f3d9a4]/10 text-[#f3d9a4]'
+                        : syncStatus === 'error'
+                          ? 'border-[#edb4c5]/40 bg-[#edb4c5]/10 text-[#edb4c5]'
+                          : 'border-white/[0.1] bg-white/[0.04] text-white/60'
+                  }`}
+                >
+                  <Cloud size={11} />
+                  {syncStatus === 'synced'
+                    ? 'Cloud & Local Synced'
+                    : syncStatus === 'syncing'
+                      ? 'Synchronizing...'
+                      : syncStatus === 'offline'
+                        ? 'Offline Outbox Active'
+                        : syncStatus === 'error'
+                          ? 'Sync Retrying (Outbox Safe)'
+                          : 'Sync Engine Idle'}
+                </span>
+
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-0.5 text-[11px] text-white/60">
+                  <ShieldCheck size={12} className="text-[#7ec8b8]" /> Zero-PII Logging
+                </span>
+              </div>
+
+              <p className="text-xs leading-relaxed text-white/60">
+                LUMINA utilizes a deterministic Last-Write-Wins (LWW) local-first sync engine. All check-ins, letters, and blooms write instantly to your on-device IndexedDB with zero latency.
+                {healthData?.databaseStatus?.connected
+                  ? ' When a connection to PostgreSQL is present, changes are atomically mirrored to your encrypted relational cloud tables.'
+                  : ' Currently running in pure on-device mode; all sanctuary records remain 100% private on this device without cloud dependency.'}
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:items-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleManualSyncClick}
+                disabled={syncStatus === 'syncing'}
+                className="primary-button !px-4 !py-2 !text-xs inline-flex items-center gap-2"
+              >
+                <RefreshCw
+                  size={13}
+                  className={syncStatus === 'syncing' ? 'animate-spin' : ''}
+                />
+                {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Sanctuary Now'}
+              </button>
+              {syncFeedback ? (
+                <span className="text-[11px] text-[#7ec8b8] animate-in fade-in">
+                  {syncFeedback}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3 border-t border-white/[0.07] text-[11px]">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5">
+              <p className="text-white/40 uppercase tracking-wider text-[9px] font-semibold mb-0.5">Last Synchronized</p>
+              <p className="text-white/80 font-medium">
+                {lastSyncedAt ? `${shortDate(lastSyncedAt)} at ${new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet synced (Local baseline)'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5">
+              <p className="text-white/40 uppercase tracking-wider text-[9px] font-semibold mb-0.5">Database Subsystem</p>
+              <p className="text-white/80 font-medium truncate">
+                {healthData?.subsystems?.database || (probingHealth ? 'Probing...' : 'local-indexeddb-only')}
+                {healthData?.subsystems?.latencyMs ? ` (${healthData.subsystems.latencyMs}ms)` : ''}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5">
+              <p className="text-white/40 uppercase tracking-wider text-[9px] font-semibold mb-0.5">AI Subsystem</p>
+              <p className="text-white/80 font-medium truncate">
+                {healthData?.subsystems?.aiCompanion || (aiStatus === 'gemini' ? 'gemini-configured' : 'local-fallback')}
+              </p>
+            </div>
+          </div>
         </div>
       </Section>
 

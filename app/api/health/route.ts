@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCorsHeaders } from '@/lib/api-client'
+import { checkDatabaseConnection } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
   const origin = req.headers.get('origin')
 
   const hasGemini = Boolean(process.env.GEMINI_API_KEY?.trim())
-  const hasPostgres = Boolean(process.env.DATABASE_URL?.trim())
+  const dbCheck = await checkDatabaseConnection()
 
   const healthPayload = {
     status: 'ok',
@@ -34,8 +35,15 @@ export async function GET(req: Request) {
     timestamp: new Date().toISOString(),
     subsystems: {
       aiCompanion: hasGemini ? 'gemini-configured' : 'local-fallback',
-      database: hasPostgres ? 'postgres-configured' : 'local-indexeddb-only',
+      database: dbCheck.mode,
+      latencyMs: dbCheck.latencyMs,
       privacyGuarantee: 'zero-pii-logging',
+    },
+    databaseStatus: {
+      connected: dbCheck.connected,
+      mode: dbCheck.mode,
+      latencyMs: dbCheck.latencyMs,
+      message: dbCheck.message,
     },
   }
 
