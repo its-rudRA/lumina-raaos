@@ -3,35 +3,7 @@
  * Target: Native Android (Capacitor 6+)
  */
 
-export interface CapacitorConfig {
-  appId: string
-  appName: string
-  webDir: string
-  backgroundColor?: string
-  plugins?: {
-    StatusBar?: {
-      style?: 'DARK' | 'LIGHT' | 'DEFAULT'
-      backgroundColor?: string
-      overlaysWebView?: boolean
-    }
-    Keyboard?: {
-      resize?: 'body' | 'ionic' | 'native' | 'none'
-      style?: 'DARK' | 'LIGHT' | 'DEFAULT'
-      resizeOnFullScreen?: boolean
-    }
-    [key: string]: unknown
-  }
-  android?: {
-    backgroundColor?: string
-    allowMixedContent?: boolean
-    captureInput?: boolean
-    webContentsDebuggingEnabled?: boolean
-    buildOptions?: {
-      keystorePath?: string
-      keystoreAlias?: string
-    }
-  }
-}
+import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.raaos.lumina',

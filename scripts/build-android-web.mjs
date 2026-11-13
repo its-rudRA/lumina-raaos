@@ -76,9 +76,9 @@ async function runAndroidWebBuild() {
   try {
     stashApiRoutes()
 
-    console.log('\x1b[34m[android-build]\x1b[0m Running Next.js static export (CAPACITOR_ANDROID=true npx next build)...\n')
+    console.log('\x1b[34m[android-build]\x1b[0m Running Next.js static export (CAPACITOR_ANDROID=true npx next build --webpack)...\n')
 
-    const buildProcess = spawn('npx', ['next', 'build'], {
+    const buildProcess = spawn('npx', ['next', 'build', '--webpack'], {
       cwd: ROOT,
       stdio: 'inherit',
       env: {
