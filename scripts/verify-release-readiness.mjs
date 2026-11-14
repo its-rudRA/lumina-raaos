@@ -34,9 +34,11 @@ const REQUIRED_API_SYNC = [
   'app/api/companion/route.ts',
   'app/api/sync/route.ts',
   'app/api/health/route.ts',
+  'app/api/version/route.ts',
   'lib/api-client.ts',
   'lib/sync-engine.ts',
   'lib/prisma.ts',
+  'lib/version.ts',
 ]
 
 const REQUIRED_DB = [

@@ -18,6 +18,12 @@ import {
   mergeSanctuaryStatesLWW,
 } from '../lib/sync-engine.ts'
 import { getCorsHeaders, resolveApiUrl } from '../lib/api-client.ts'
+import {
+  compareVersions,
+  DEFAULT_APP_VERSION,
+  isNewerVersion,
+  shouldShowAndroidUpdatePrompt,
+} from '../lib/version.ts'
 
 // Replicating route.ts sanitization function for isolated verification
 function sanitizeUserText(value: unknown, maxLen = 800): string {
@@ -323,6 +329,84 @@ describe('LUMINA Automated Verification Suite', () => {
 
       const customOriginHeaders = getCorsHeaders('https://lumina.app')
       assert.strictEqual(customOriginHeaders['Access-Control-Allow-Origin'], 'https://lumina.app')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Test 6: Sideloaded Android APK Update Version Engine (lib/version.ts)
+  // ---------------------------------------------------------------------------
+  describe('Test 6: Sideloaded Android APK Update Version Engine (lib/version.ts)', () => {
+    it('should compare SemVer and release-candidate prereleases accurately', () => {
+      assert.strictEqual(DEFAULT_APP_VERSION, '1.0.0-rc.1')
+      assert.strictEqual(compareVersions('1.0.0-rc.1', '1.0.0-rc.1'), 0)
+      assert.strictEqual(isNewerVersion('1.0.0-rc.1', '1.0.0-rc.1'), false)
+
+      // Prerelease numeric progression (rc.10 > rc.2 > rc.1)
+      assert.strictEqual(isNewerVersion('1.0.0-rc.2', '1.0.0-rc.1'), true)
+      assert.strictEqual(isNewerVersion('1.0.0-rc.10', '1.0.0-rc.2'), true)
+      assert.strictEqual(isNewerVersion('v1.0.0-rc.2', '1.0.0-rc.1'), true)
+
+      // Stable release always outranks its rc prereleases
+      assert.strictEqual(isNewerVersion('1.0.0', '1.0.0-rc.1'), true)
+      assert.strictEqual(isNewerVersion('1.0.0-rc.1', '1.0.0'), false)
+
+      // Minor/patch bumps and downgrade protection
+      assert.strictEqual(isNewerVersion('1.0.1-rc.1', '1.0.0'), true)
+      assert.strictEqual(isNewerVersion('1.1.0', '1.0.0-rc.9'), true)
+      assert.strictEqual(isNewerVersion('0.9.9', '1.0.0-rc.1'), false)
+      assert.strictEqual(isNewerVersion('invalid', '1.0.0-rc.1'), false)
+    })
+
+    it('should trigger update prompt only on native Android platforms when newer and undismissed', () => {
+      // Never show on web browser
+      assert.strictEqual(
+        shouldShowAndroidUpdatePrompt({
+          isNative: false,
+          latestVersion: '1.1.0',
+          currentVersion: '1.0.0-rc.1',
+        }),
+        false
+      )
+
+      // Do not show when native APK matches current version
+      assert.strictEqual(
+        shouldShowAndroidUpdatePrompt({
+          isNative: true,
+          latestVersion: '1.0.0-rc.1',
+          currentVersion: '1.0.0-rc.1',
+        }),
+        false
+      )
+
+      // Show when native APK is behind latestVersion
+      assert.strictEqual(
+        shouldShowAndroidUpdatePrompt({
+          isNative: true,
+          latestVersion: '1.0.0',
+          currentVersion: '1.0.0-rc.1',
+        }),
+        true
+      )
+
+      // Suppress once user dismisses that version, re-show when a newer version ships
+      assert.strictEqual(
+        shouldShowAndroidUpdatePrompt({
+          isNative: true,
+          latestVersion: '1.0.0',
+          currentVersion: '1.0.0-rc.1',
+          dismissedVersion: '1.0.0',
+        }),
+        false
+      )
+      assert.strictEqual(
+        shouldShowAndroidUpdatePrompt({
+          isNative: true,
+          latestVersion: '1.0.1',
+          currentVersion: '1.0.0-rc.1',
+          dismissedVersion: '1.0.0',
+        }),
+        true
+      )
     })
   })
 })

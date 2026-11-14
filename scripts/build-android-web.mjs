@@ -96,6 +96,14 @@ async function runAndroidWebBuild() {
     })
 
     if (exitCode === 0) {
+      const outDir = path.join(ROOT, 'out')
+      if (fs.existsSync(outDir)) {
+        for (const entry of fs.readdirSync(outDir)) {
+          if (entry.endsWith('.apk') || entry.endsWith('.aab')) {
+            fs.rmSync(path.join(outDir, entry), { force: true })
+          }
+        }
+      }
       console.log('\n\x1b[32m✔ Static export complete! Assets emitted to /out.\x1b[0m')
       console.log('\x1b[32m  Run "npx cap copy android" or "npx cap sync android" to update the APK project.\x1b[0m\n')
     } else {

@@ -1,5 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import { AndroidUpdateBanner } from '@/components/android-update-banner'
 import { SanctuaryProvider } from '@/context/sanctuary-context'
 import './globals.css'
 
@@ -46,7 +47,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <SanctuaryProvider>{children}</SanctuaryProvider>
+        <SanctuaryProvider>
+          <AndroidUpdateBanner />
+          {children}
+        </SanctuaryProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
