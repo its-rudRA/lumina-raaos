@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Loader2, ShieldCheck, Sparkles } from 'lucide-react'
 import {
@@ -9,6 +10,7 @@ import {
   StaggeredContainer,
   StaggeredItem,
 } from '@/components/animation-system'
+import { AndroidDownloadButton } from '@/components/android-download-button'
 import { SanctuaryBackdrop } from '@/components/auth-shell'
 import { triggerPortalTransition } from '@/components/sanctuary-cinematics'
 import { useSanctuary } from '@/context/sanctuary-context'
@@ -127,8 +129,8 @@ export default function WelcomePage() {
           </p>
         )}
 
-        {/* Step 6: On-Device Privacy Assurance Card */}
-        <StaggeredItem index={5} baseDelayMs={320}>
+        {/* Step 6: On-Device Privacy Assurance Card & Web Android Download */}
+        <StaggeredItem index={5} baseDelayMs={320} className="flex flex-col items-center">
           <p
             style={{ textShadow: '0 2px 10px rgba(8, 6, 20, 0.85)' }}
             className="mt-7 flex max-w-md items-start gap-2.5 rounded-2xl border border-white/15 bg-[#16112b]/65 px-4 py-3 text-left text-[11px] leading-relaxed text-[#d8d0ec] shadow-lg backdrop-blur-xl"
@@ -140,6 +142,16 @@ export default function WelcomePage() {
               IndexedDB—never sold or transmitted to third parties.
             </span>
           </p>
+
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3.5">
+            <AndroidDownloadButton />
+            <Link
+              href="/privacy"
+              className="text-xs text-white/55 underline-offset-4 transition hover:text-white/90 hover:underline"
+            >
+              Privacy Policy
+            </Link>
+          </div>
         </StaggeredItem>
       </StaggeredContainer>
     </main>

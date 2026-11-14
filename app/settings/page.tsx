@@ -24,6 +24,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { AndroidDownloadButton } from '@/components/android-download-button'
 import { AppShell } from '@/components/app-shell'
 import {
   useSanctuary,
@@ -752,6 +753,19 @@ function SettingsContent() {
               </div>
             )}
           </div>
+        </div>
+      </Section>
+
+      <Section title="Android App & Privacy Documentation">
+        <p className="text-xs leading-relaxed text-white/60">
+          Review LUMINA&apos;s local-first IndexedDB architecture, optional Neon PostgreSQL cloud
+          sync, and zero-PII Gemini companion design, or install the signed Android build directly.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <AndroidDownloadButton variant="secondary" />
+          <Link href="/privacy" className="secondary-button px-4 py-2.5 text-xs">
+            <ShieldCheck size={13} /> Read Privacy Policy
+          </Link>
         </div>
       </Section>
     </div>

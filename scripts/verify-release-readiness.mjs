@@ -27,6 +27,7 @@ const REQUIRED_ROUTES = [
   'app/insights/page.tsx',
   'app/journey/page.tsx',
   'app/settings/page.tsx',
+  'app/privacy/page.tsx',
 ]
 
 const REQUIRED_API_SYNC = [
