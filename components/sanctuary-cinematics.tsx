@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, Sparkles, Volume2 } from 'lucide-react'
+import { getFrameIntervalMs, getMaxDpr, isMobileRuntime } from '@/lib/perf'
 
 const INTRO_SESSION_KEY = 'lumina_raaos_intro_seen'
 const PORTAL_SESSION_KEY = 'lumina_portal_awakening'
@@ -140,7 +141,7 @@ export function LuminaLogoIntro({
     if (!ctx) return
 
     let animId = 0
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = getMaxDpr(2)
 
     const resize = () => {
       canvas.width = window.innerWidth * dpr
@@ -228,8 +229,16 @@ export function LuminaLogoIntro({
     let smoothMx = 0
     let smoothMy = 0
     const start = performance.now()
+    const frameInterval = getFrameIntervalMs(16.5)
+    const mobile = isMobileRuntime()
+    let lastDraw = 0
 
     const render = (now: number) => {
+      if (document.hidden || now - lastDraw < frameInterval) {
+        animId = window.requestAnimationFrame(render)
+        return
+      }
+      lastDraw = now
       const t = (now - start) / 1000
       const w = window.innerWidth
       const h = window.innerHeight
@@ -375,8 +384,10 @@ export function LuminaLogoIntro({
         ctx.globalAlpha = depthAlpha
         ctx.font = `600 ${pt.fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`
         ctx.fillStyle = pt.color
-        ctx.shadowColor = pt.color
-        ctx.shadowBlur = pt.glyph === '✦' ? 14 : 6
+        if (!mobile) {
+          ctx.shadowColor = pt.color
+          ctx.shadowBlur = pt.glyph === '✦' ? 14 : 6
+        }
         ctx.fillText(pt.glyph, pt.px, pt.py)
       }
       ctx.restore()
@@ -539,7 +550,7 @@ export function PortalAwakeningOverlay({ fallbackName }: { fallbackName?: string
     if (!ctx) return
 
     let animId = 0
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = getMaxDpr(2)
     const resize = () => {
       canvas.width = window.innerWidth * dpr
       canvas.height = window.innerHeight * dpr
@@ -557,7 +568,15 @@ export function PortalAwakeningOverlay({ fallbackName }: { fallbackName?: string
     }))
 
     const start = performance.now()
+    const frameInterval = getFrameIntervalMs(16.5)
+    const mobile = isMobileRuntime()
+    let lastDraw = 0
     const render = (now: number) => {
+      if (document.hidden || now - lastDraw < frameInterval) {
+        animId = window.requestAnimationFrame(render)
+        return
+      }
+      lastDraw = now
       const elapsed = (now - start) / 1000
       const w = window.innerWidth
       const h = window.innerHeight
@@ -579,8 +598,10 @@ export function PortalAwakeningOverlay({ fallbackName }: { fallbackName?: string
               ? `rgba(126, 200, 184, ${alpha})`
               : `rgba(232, 164, 184, ${alpha})`
         ctx.lineWidth = 2.5 + (1 - progress) * 4.5
-        ctx.shadowColor = i % 2 === 0 ? '#7ec8b8' : '#e8a4b8'
-        ctx.shadowBlur = 24
+        if (!mobile) {
+          ctx.shadowColor = i % 2 === 0 ? '#7ec8b8' : '#e8a4b8'
+          ctx.shadowBlur = 24
+        }
         ctx.beginPath()
         ctx.arc(cx, cy, radius, 0, Math.PI * 2)
         ctx.stroke()
@@ -599,8 +620,10 @@ export function PortalAwakeningOverlay({ fallbackName }: { fallbackName?: string
         ctx.rotate(m.rot)
         ctx.fillStyle = m.color
         ctx.globalAlpha = 0.75
-        ctx.shadowColor = m.color
-        ctx.shadowBlur = 14
+        if (!mobile) {
+          ctx.shadowColor = m.color
+          ctx.shadowBlur = 14
+        }
         ctx.beginPath()
         ctx.ellipse(0, 0, m.size, m.size * 0.5, 0, 0, Math.PI * 2)
         ctx.fill()

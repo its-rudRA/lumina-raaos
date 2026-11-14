@@ -26,6 +26,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import { useSanctuary, type MemoryCategory } from '@/context/sanctuary-context'
 import { glass, SOMATIC_TAGS, shortDate, timeAgo } from '@/lib/format'
+import { getFrameIntervalMs, getMaxDpr, isMobileRuntime } from '@/lib/perf'
 
 const PERSONAS: Array<{
   name: string
@@ -125,7 +126,7 @@ function AiLivingAuraBackground({
     if (!ctx) return
 
     let animId = 0
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = getMaxDpr(2)
 
     const resize = () => {
       const parent = canvas.parentElement
@@ -162,8 +163,23 @@ function AiLivingAuraBackground({
     const ripples: InwardRipple[] = []
     let lastPulseSeen = stateRef.current.typingPulse
 
+    const mobile = isMobileRuntime()
+    const frameInterval = getFrameIntervalMs(16.5)
+    let isInViewport = true
+    let isTabHidden = typeof document !== 'undefined' ? document.hidden : false
     const start = performance.now()
+    let lastDraw = 0
     const render = (now: number) => {
+      // PERF: pause loop while off-screen or backgrounded and cap to 30fps on mobile WebView.
+      if (isTabHidden || !isInViewport) {
+        animId = 0
+        return
+      }
+      if (now - lastDraw < frameInterval) {
+        animId = window.requestAnimationFrame(render)
+        return
+      }
+      lastDraw = now
       const t = (now - start) / 1000
       const w = canvas.width / dpr
       const h = canvas.height / dpr
@@ -276,8 +292,10 @@ function AiLivingAuraBackground({
           const fy = cy + Math.sin(orbitAngle) * (orbitRadius * 0.72)
           ctx.save()
           ctx.fillStyle = f % 2 === 0 ? `rgba(${r1}, ${g1}, ${b1}, 0.88)` : 'rgba(243, 217, 164, 0.9)'
-          ctx.shadowColor = f % 2 === 0 ? pDef.color : '#f3d9a4'
-          ctx.shadowBlur = 14
+          if (!mobile) {
+            ctx.shadowColor = f % 2 === 0 ? pDef.color : '#f3d9a4'
+            ctx.shadowBlur = 14
+          }
           ctx.beginPath()
           ctx.arc(fx, fy, 2.6 + (f % 2) * 1.1, 0, Math.PI * 2)
           ctx.fill()
@@ -332,9 +350,43 @@ function AiLivingAuraBackground({
       animId = window.requestAnimationFrame(render)
     }
 
-    animId = window.requestAnimationFrame(render)
+    const syncPlayback = () => {
+      if (isTabHidden || !isInViewport) {
+        if (animId) {
+          window.cancelAnimationFrame(animId)
+          animId = 0
+        }
+      } else if (!animId) {
+        lastDraw = 0
+        animId = window.requestAnimationFrame(render)
+      }
+    }
+
+    const onVisibilityChange = () => {
+      isTabHidden = document.hidden
+      syncPlayback()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    const viewportObserver =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            ([entry]) => {
+              isInViewport = entry ? entry.isIntersecting : true
+              syncPlayback()
+            },
+            { threshold: 0.02 }
+          )
+        : null
+    viewportObserver?.observe(canvas)
+
+    if (!isTabHidden && isInViewport) {
+      animId = window.requestAnimationFrame(render)
+    }
     return () => {
-      window.cancelAnimationFrame(animId)
+      if (animId) window.cancelAnimationFrame(animId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      viewportObserver?.disconnect()
       observer.disconnect()
     }
   }, [])

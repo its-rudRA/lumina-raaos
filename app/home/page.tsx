@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
 import { SomaticPulseScan } from '@/components/somatic-pulse-scan'
-import { useSanctuary } from '@/context/sanctuary-context'
+import { useRainSeconds, useSanctuary } from '@/context/sanctuary-context'
 import { EMOTION_OPTIONS } from '@/lib/db'
 import { auraColor, formatClock, glass, timeAgo } from '@/lib/format'
 
@@ -30,6 +30,11 @@ function greetingFor(hour: number) {
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   return 'Good evening'
+}
+
+function HomeRainLabel() {
+  const rainSeconds = useRainSeconds()
+  return <>Pause 3:00 Rain ({formatClock(rainSeconds)})</>
 }
 
 function HomeContent() {
@@ -46,7 +51,6 @@ function HomeContent() {
     journeyCompletedDays,
     starJar,
     rainPlaying,
-    rainSeconds,
     toggleRain,
     sendCompanionThought,
     aiStatus,
@@ -499,9 +503,7 @@ function HomeContent() {
             >
               {rainPlaying ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}
               <span>
-                {rainPlaying
-                  ? `Pause 3:00 Rain (${formatClock(rainSeconds)})`
-                  : 'Start 3:00 Rain'}
+                {rainPlaying ? <HomeRainLabel /> : 'Start 3:00 Rain'}
               </span>
             </button>
 

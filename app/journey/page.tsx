@@ -348,6 +348,7 @@ export default function JourneyPage() {
     const step = (tickMs / slideDurationMs) * 100
 
     const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       setSlideProgress(prev => {
         if (prev + step >= 100) {
           setActiveSlide(curr => (curr + 1) % 4)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import Link from 'next/link'
 import {
   ArrowRight,
@@ -73,6 +73,14 @@ function CheckInContent() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [selectedCalendarDayKey, setSelectedCalendarDayKey] = useState<string | null>(null)
+  const dragRafRef = useRef<number>(0)
+  const pendingDragOrbRef = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (dragRafRef.current) window.cancelAnimationFrame(dragRafRef.current)
+    }
+  }, [])
 
   function handleSelectEmotion(opt: EmotionOption) {
     setSelectedEmotion(opt)
@@ -86,11 +94,25 @@ function CheckInContent() {
   function move(e: PointerEvent<HTMLDivElement>) {
     if (e.type === 'pointermove' && e.buttons !== 1) return
     const r = e.currentTarget.getBoundingClientRect()
-    setOrb({
+    const nextOrb = {
       x: Math.max(4, Math.min(96, ((e.clientX - r.left) / r.width) * 100)),
       y: Math.max(6, Math.min(94, ((e.clientY - r.top) / r.height) * 100)),
+    }
+    if (e.type !== 'pointermove') {
+      setOrb(nextOrb)
+      setSaved(false)
+      return
+    }
+    pendingDragOrbRef.current = nextOrb
+    if (dragRafRef.current) return
+    dragRafRef.current = window.requestAnimationFrame(() => {
+      dragRafRef.current = 0
+      if (pendingDragOrbRef.current) {
+        setOrb(pendingDragOrbRef.current)
+        pendingDragOrbRef.current = null
+        setSaved(false)
+      }
     })
-    setSaved(false)
   }
 
   async function save() {

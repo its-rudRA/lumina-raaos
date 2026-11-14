@@ -23,7 +23,7 @@ import {
   Wind,
 } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
-import { useSanctuary } from '@/context/sanctuary-context'
+import { useRainSeconds, useSanctuary } from '@/context/sanctuary-context'
 import type { BioRhythmState } from '@/lib/db'
 import { formatClock, glass } from '@/lib/format'
 
@@ -472,8 +472,14 @@ function spawnSoundLayer(
   }
 }
 
+function RainCountdownValue() {
+  const rainSeconds = useRainSeconds()
+  const countdown = Math.max(0, 180 - (rainSeconds % 180))
+  return <span className="font-serif text-lg text-white">{formatClock(countdown)}</span>
+}
+
 function SoundscapeMixerStudio() {
-  const { rainPlaying, rainSeconds, toggleRain, resetRain } = useSanctuary()
+  const { rainPlaying, toggleRain, resetRain } = useSanctuary()
   const ctxRef = useRef<AudioContext | null>(null)
   const handlesRef = useRef<Partial<Record<LayerId, ActiveLayerHandle>>>({})
 
@@ -614,7 +620,6 @@ function SoundscapeMixerStudio() {
   }
 
   const activeCount = Object.values(activeLayers).filter(Boolean).length
-  const countdown = Math.max(0, 180 - (rainSeconds % 180))
 
   return (
     <section className={`${glass} p-6`}>
@@ -802,7 +807,7 @@ function SoundscapeMixerStudio() {
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-white/50">Cycle countdown:</span>
-              <span className="font-serif text-lg text-white">{formatClock(countdown)}</span>
+              <RainCountdownValue />
             </div>
             <div className="flex gap-2">
               <button

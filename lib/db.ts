@@ -158,12 +158,15 @@ const DEFAULT_PROFILE: Omit<SanctuaryState, 'key'> = {
 
 const DB_NAME = 'lumina_sanctuary_db'
 const DB_VERSION = 1
+let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !('indexedDB' in window)) {
-      return reject(new Error('IndexedDB unavailable'))
-    }
+  if (typeof window === 'undefined' || !('indexedDB' in window)) {
+    return Promise.reject(new Error('IndexedDB unavailable'))
+  }
+  if (dbPromise) return dbPromise
+
+  dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
@@ -177,9 +180,30 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore('letters', { keyPath: 'id', autoIncrement: true })
       }
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    req.onsuccess = () => {
+      const db = req.result
+      db.onversionchange = () => {
+        dbPromise = null
+        try {
+          db.close()
+        } catch {
+          // ignore
+        }
+      }
+      db.onclose = () => {
+        dbPromise = null
+      }
+      resolve(db)
+    }
+    req.onerror = () => {
+      dbPromise = null
+      reject(req.error)
+    }
+    req.onblocked = () => {
+      dbPromise = null
+    }
   })
+  return dbPromise
 }
 
 export async function loadSanctuaryState(): Promise<SanctuaryState | null> {

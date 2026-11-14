@@ -16,6 +16,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import { useSanctuary } from '@/context/sanctuary-context'
 import { glass, shortDate, timeAgo } from '@/lib/format'
+import { getFrameIntervalMs, getMaxDpr, isMobileRuntime } from '@/lib/perf'
 
 type Tab = 'release' | 'jar' | 'letters'
 type ReleaseStyle = 'fire' | 'starlight' | 'mist'
@@ -60,7 +61,8 @@ function ReleaseCanvasOverlay({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const mobile = isMobileRuntime()
+    const dpr = getMaxDpr(2)
     const rect = canvas.getBoundingClientRect()
     const width = Math.max(300, rect.width)
     const height = Math.max(180, rect.height)
@@ -74,7 +76,7 @@ function ReleaseCanvasOverlay({
       mist: ['#b8c9e6', '#91cabe', '#d8e3f5', '#c8b8e8', '#a5d4ca'],
     }
     const palette = palettes[style]
-    const count = style === 'mist' ? 42 : 68
+    const count = mobile ? (style === 'mist' ? 24 : 36) : style === 'mist' ? 42 : 68
 
     const particles: CanvasParticle[] = Array.from({ length: count }, (_, i) => {
       const color = palette[i % palette.length]
@@ -120,8 +122,15 @@ function ReleaseCanvasOverlay({
 
     let rafId = 0
     let frame = 0
+    const frameInterval = getFrameIntervalMs(16.5)
+    let lastDraw = 0
 
-    const render = () => {
+    const render = (now: number) => {
+      if (document.hidden || now - lastDraw < frameInterval) {
+        rafId = window.requestAnimationFrame(render)
+        return
+      }
+      lastDraw = now
       frame++
       ctx.clearRect(0, 0, width, height)
 
@@ -147,8 +156,10 @@ function ReleaseCanvasOverlay({
         } else if (style === 'starlight') {
           const twinkle = 0.65 + 0.35 * Math.sin(frame * 0.18 + p.twinklePhase)
           ctx.globalAlpha = p.alpha * twinkle
-          ctx.shadowBlur = 14
-          ctx.shadowColor = p.color
+          if (!mobile) {
+            ctx.shadowBlur = 14
+            ctx.shadowColor = p.color
+          }
           ctx.fillStyle = p.color
           ctx.beginPath()
           ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)
@@ -156,8 +167,10 @@ function ReleaseCanvasOverlay({
         } else {
           // Fire ember
           ctx.globalAlpha = p.alpha
-          ctx.shadowBlur = 16
-          ctx.shadowColor = p.color
+          if (!mobile) {
+            ctx.shadowBlur = 16
+            ctx.shadowColor = p.color
+          }
           ctx.fillStyle = p.color
           ctx.beginPath()
           ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)

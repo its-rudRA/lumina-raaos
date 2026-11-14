@@ -21,6 +21,21 @@ export type SyncStatus =
 const OUTBOX_STORAGE_KEY = 'lumina_sync_outbox'
 const LAST_SYNC_KEY = 'lumina_last_synced_at'
 const RETRY_DELAYS_MS = [1000, 3000, 9000]
+const SYNC_FETCH_TIMEOUT_MS = 8000
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = SYNC_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 export interface SyncPayload {
   version: number
@@ -202,20 +217,37 @@ export function mergeCheckInLists(
 }
 
 /**
- * Enqueue a sync payload to localStorage outbox when offline.
+ * Enqueue a sync payload to localStorage outbox asynchronously so JSON serialization
+ * never blocks Android WebView interactions. Coalesces to latest snapshots per user.
  */
+let pendingOutboxTimer: ReturnType<typeof setTimeout> | null = null
+let pendingOutboxPayload: SyncPayload | null = null
+
 export function enqueueOutbox(payload: SyncPayload): void {
   if (typeof window === 'undefined') return
-  try {
-    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY)
-    const queue: SyncPayload[] = raw ? JSON.parse(raw) : []
-    // Keep max 10 queued items to prevent storage bloat
-    queue.push(payload)
-    if (queue.length > 10) queue.shift()
-    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(queue))
-  } catch (err) {
-    console.warn('[SyncEngine] Failed to write outbox to localStorage:', err)
+  pendingOutboxPayload = payload
+  if (pendingOutboxTimer !== null) return
+
+  const flush = () => {
+    pendingOutboxTimer = null
+    const nextPayload = pendingOutboxPayload
+    pendingOutboxPayload = null
+    if (!nextPayload) return
+    try {
+      const raw = localStorage.getItem(OUTBOX_STORAGE_KEY)
+      const queue: SyncPayload[] = raw ? JSON.parse(raw) : []
+      // Coalesce latest snapshot for the same userId (cap to 2 entries total)
+      const filtered = Array.isArray(queue)
+        ? queue.filter(item => (item.userId ?? 'anon') !== (nextPayload.userId ?? 'anon')).slice(-1)
+        : []
+      filtered.push(nextPayload)
+      localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(filtered))
+    } catch (err) {
+      console.warn('[SyncEngine] Failed to write outbox to localStorage:', err)
+    }
   }
+
+  pendingOutboxTimer = setTimeout(flush, 0)
 }
 
 /**
@@ -235,7 +267,7 @@ export async function flushOutbox(authToken?: string): Promise<boolean> {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`
 
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(item),
@@ -306,7 +338,7 @@ export async function performSync(
         headers['Authorization'] = `Bearer ${authToken}`
       }
 
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -380,19 +412,29 @@ export function registerSyncListeners(
 ): () => void {
   if (typeof window === 'undefined') return () => {}
 
+  // PERF: debounce flaky Android connectivity flaps so we never trigger a burst of sync calls.
+  let onlineTimer: ReturnType<typeof setTimeout> | null = null
   const handleOnline = () => {
-    onStatusChange('syncing')
-    flushOutbox()
-      .then((ok) => {
-        onStatusChange(ok ? 'synced' : 'error')
-        if (onReconnect) onReconnect()
-      })
-      .catch(() => {
-        onStatusChange('error')
-      })
+    if (onlineTimer) clearTimeout(onlineTimer)
+    onlineTimer = setTimeout(() => {
+      onlineTimer = null
+      onStatusChange('syncing')
+      flushOutbox()
+        .then((ok) => {
+          onStatusChange(ok ? 'synced' : 'error')
+          if (onReconnect) onReconnect()
+        })
+        .catch(() => {
+          onStatusChange('error')
+        })
+    }, 1200)
   }
 
   const handleOffline = () => {
+    if (onlineTimer) {
+      clearTimeout(onlineTimer)
+      onlineTimer = null
+    }
     onStatusChange('offline')
   }
 
@@ -400,6 +442,7 @@ export function registerSyncListeners(
   window.addEventListener('offline', handleOffline)
 
   return () => {
+    if (onlineTimer) clearTimeout(onlineTimer)
     window.removeEventListener('online', handleOnline)
     window.removeEventListener('offline', handleOffline)
   }

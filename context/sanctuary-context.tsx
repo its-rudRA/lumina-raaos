@@ -276,7 +276,6 @@ export interface SanctuaryContextValue {
 
   // persistent audio
   rainPlaying: boolean
-  rainSeconds: number
   toggleRain: () => void
   resetRain: () => void
 
@@ -343,6 +342,7 @@ export interface SanctuaryContextValue {
 }
 
 const SanctuaryContext = createContext<SanctuaryContextValue | null>(null)
+const RainClockContext = createContext<number>(0)
 
 // Module-level guards so React StrictMode double-mounts or Fast Refresh never re-trigger GET /api/companion
 let moduleAiChecked = false
@@ -395,23 +395,63 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
 
   /**
    * Merge a patch into memory immediately (optimistic), then persist to IndexedDB.
-   * The write is wrapped in try/catch + a 1500ms timeout so a locked/blocked IndexedDB
-   * (e.g. Incognito) can never leave callers awaiting forever.
+   * PERF: persistence is coalesced + debounced (700ms) and runs in idle time so slider drags,
+   * check-ins and taps never block the main thread with IndexedDB read-modify-write cycles.
+   * Pending patches are flushed on pagehide/background, and before any DB read/export/erase.
    */
+  const pendingPatchRef = useRef<Partial<ProfileData>>({})
+  const persistTimerRef = useRef<number | null>(null)
+
+  const flushPending = useCallback(async () => {
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = null
+    }
+    const patch = pendingPatchRef.current
+    if (Object.keys(patch).length === 0) return
+    pendingPatchRef.current = {}
+    try {
+      await Promise.race([
+        patchSanctuaryState(patch),
+        new Promise<void>(resolve => window.setTimeout(resolve, 1500)),
+      ])
+    } catch {
+      // State is already updated in memory; persistence is best-effort.
+    }
+  }, [])
+
   const update = useCallback(
     async (patch: Partial<ProfileData>) => {
       applyProfile({ ...profileRef.current, ...patch })
-      try {
-        await Promise.race([
-          patchSanctuaryState(patch),
-          new Promise<void>(resolve => window.setTimeout(resolve, 1500)),
-        ])
-      } catch {
-        // State is already updated in memory; persistence is best-effort.
-      }
+      pendingPatchRef.current = { ...pendingPatchRef.current, ...patch }
+      if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = window.setTimeout(() => {
+        persistTimerRef.current = null
+        const idle = (
+          window as unknown as {
+            requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+          }
+        ).requestIdleCallback
+        if (idle) idle(() => void flushPending(), { timeout: 1500 })
+        else void flushPending()
+      }, 700)
     },
-    [applyProfile]
+    [applyProfile, flushPending]
   )
+
+  // Flush any debounced writes when the app is backgrounded / closed so nothing is lost.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushPending()
+    }
+    const onPageHide = () => void flushPending()
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onPageHide)
+    }
+  }, [flushPending])
 
   const adoptStored = useCallback(
     (stored: SanctuaryState | null) => {
@@ -645,8 +685,9 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
 
   // ---- Auth --------------------------------------------------------------
   const refreshFromDB = useCallback(async () => {
+    await flushPending()
     adoptStored(await loadSanctuaryState())
-  }, [adoptStored])
+  }, [adoptStored, flushPending])
 
   const registerUser = useCallback(
     async (name: string, email: string, password: string) => {
@@ -695,9 +736,10 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
   }, [applyProfile, refreshFromDB])
 
   const signOutUser = useCallback(async () => {
+    await flushPending()
     await signOutLocalUser()
     applyProfile({ ...profileRef.current, authUser: null })
-  }, [applyProfile])
+  }, [applyProfile, flushPending])
 
   // ---- Onboarding --------------------------------------------------------
   const updateOnboarding = useCallback(
@@ -1324,9 +1366,18 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     return cleanup
   }, [])
 
-  const exportData = useCallback(() => exportSanctuaryData(), [])
+  const exportData = useCallback(async () => {
+    await flushPending()
+    return exportSanctuaryData()
+  }, [flushPending])
 
   const eraseAllData = useCallback(async () => {
+    // Discard any debounced writes so erased data can never be resurrected.
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = null
+    }
+    pendingPatchRef.current = {}
     stopRain()
     setRainSeconds(0)
     // Cloud purge if configured
@@ -1387,7 +1438,6 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       crisisAlert,
       dismissCrisisAlert,
       rainPlaying,
-      rainSeconds,
       toggleRain,
       resetRain,
       registerUser,
@@ -1439,7 +1489,6 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
       crisisAlert,
       dismissCrisisAlert,
       rainPlaying,
-      rainSeconds,
       toggleRain,
       resetRain,
       registerUser,
@@ -1480,11 +1529,20 @@ export function SanctuaryProvider({ children }: { children: ReactNode }) {
     ]
   )
 
-  return <SanctuaryContext.Provider value={value}>{children}</SanctuaryContext.Provider>
+  return (
+    <SanctuaryContext.Provider value={value}>
+      <RainClockContext.Provider value={rainSeconds}>{children}</RainClockContext.Provider>
+    </SanctuaryContext.Provider>
+  )
 }
 
 export function useSanctuary(): SanctuaryContextValue {
   const ctx = useContext(SanctuaryContext)
   if (!ctx) throw new Error('useSanctuary must be used inside <SanctuaryProvider>')
   return ctx
+}
+
+/** Isolated 1Hz rain elapsed timer subscription so other trees stay quiet. */
+export function useRainSeconds(): number {
+  return useContext(RainClockContext)
 }

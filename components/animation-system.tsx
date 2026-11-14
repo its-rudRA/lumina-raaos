@@ -12,7 +12,7 @@ import {
 import Link from 'next/link'
 import * as THREE from 'three'
 import { useSanctuary } from '@/context/sanctuary-context'
-
+import { getFrameIntervalMs, getMaxDpr, isMobileRuntime } from '@/lib/perf'
 // ---------------------------------------------------------------------------
 // 1. <AnimeSkyWorld /> (AnimatedBackground + AuroraBackground + FloatingParticles)
 //    60fps GPU-friendly Makoto Shinkai twilight sky, undulating aurora ribbons,
@@ -49,12 +49,7 @@ export function AnimeSkyWorld({
 
     let animId = 0
     let isHidden = typeof document !== 'undefined' ? document.hidden : false
-    const isMobileViewport =
-      typeof window !== 'undefined' &&
-      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
-    const dpr = isMobileViewport
-      ? Math.min(window.devicePixelRatio || 1, 1.35)
-      : Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = getMaxDpr(2)
 
     const resize = () => {
       canvas.width = window.innerWidth * dpr
@@ -362,7 +357,7 @@ export function AnimeSkyWorld({
       }
 
       // Delta frame-pacing: 60 FPS (16.5ms) in full mode, 30 FPS (33ms) in gentle mode
-      const frameInterval = currentSensory === 'gentle' ? 33 : 16.5
+      const frameInterval = getFrameIntervalMs(currentSensory === 'gentle' ? 33 : 16.5)
       const deltaSinceLast = now - lastFrameTime
       if (deltaSinceLast < frameInterval) {
         animId = window.requestAnimationFrame(render)
@@ -481,22 +476,19 @@ export function CelestialSanctuaryCore({
     if (!container) return
 
     let renderer: THREE.WebGLRenderer
+    const mobileGpu = isMobileRuntime()
     try {
       renderer = new THREE.WebGLRenderer({
         alpha: true,
-        antialias: true,
+        antialias: !mobileGpu,
         powerPreference: 'high-performance',
       })
     } catch {
       return
     }
 
-    const isMobileViewport =
-      typeof window !== 'undefined' &&
-      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
-    const dpr = isMobileViewport
-      ? Math.min(window.devicePixelRatio || 1, 1.5)
-      : Math.min(window.devicePixelRatio || 1, 2)
+    // PERF: DPR capped at 1.25 on mobile so WebGL never starves the CPU/GPU.
+    const dpr = getMaxDpr(2)
     renderer.setPixelRatio(dpr)
     renderer.setSize(pixelDim, pixelDim)
     renderer.setClearColor(0x000000, 0)
@@ -566,7 +558,7 @@ export function CelestialSanctuaryCore({
         emissiveIntensity: 0.78,
         roughness: 0.14,
         metalness: 0.1,
-        transmission: 0.65,
+        transmission: mobileGpu ? 0 : 0.65,
         transparent: true,
         opacity: 0.96,
       })
@@ -748,7 +740,7 @@ export function CelestialSanctuaryCore({
       const isLow = sensoryRef.current === 'low'
       const isGentle = sensoryRef.current === 'gentle'
       // 60 FPS (16.5ms) in full mode, 30 FPS (33ms) in gentle/low mode
-      const frameInterval = isLow || isGentle ? 33 : 16.5
+      const frameInterval = getFrameIntervalMs(isLow || isGentle ? 33 : 16.5)
       const deltaSinceLast = now - lastFrameTime
       if (deltaSinceLast < frameInterval) {
         return
@@ -1067,6 +1059,7 @@ export function TiltGlassCard({
   const rafRef = useRef<number>(0)
 
   function handleMove(e: PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === 'touch') return
     const el = cardRef.current
     const glow = glowRef.current
     if (!el || !glow) return
@@ -1107,7 +1100,7 @@ export function TiltGlassCard({
         willChange: 'transform',
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms ease',
       }}
-      className={`relative overflow-hidden rounded-[26px] border border-white/15 bg-[#16112b]/68 backdrop-blur-xl shadow-[0_24px_80px_rgba(6,4,18,0.45),inset_0_1px_0_rgba(255,255,255,0.12)] ${className}`}
+      className={`lumina-glass-card relative overflow-hidden rounded-[26px] border border-white/15 bg-[#16112b]/68 backdrop-blur-xl shadow-[0_24px_80px_rgba(6,4,18,0.45),inset_0_1px_0_rgba(255,255,255,0.12)] ${className}`}
     >
       <div
         ref={glowRef}

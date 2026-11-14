@@ -1,5 +1,5 @@
 export const glass =
-  'rounded-[24px] border border-white/15 bg-[#16112b]/68 backdrop-blur-xl shadow-[0_20px_60px_rgba(6,4,18,0.42),inset_0_1px_0_rgba(255,255,255,0.1)]'
+  'lumina-glass-card rounded-[24px] border border-white/15 bg-[#16112b]/68 backdrop-blur-xl shadow-[0_20px_60px_rgba(6,4,18,0.42),inset_0_1px_0_rgba(255,255,255,0.1)]'
 
 export function timeAgo(timestamp: number): string {
   const diffSec = Math.max(1, Math.floor((Date.now() - timestamp) / 1000))

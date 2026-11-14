@@ -14,7 +14,7 @@ import {
   Wind,
 } from 'lucide-react'
 import { BreathPacerModal } from '@/components/support-modals'
-import { useSanctuary } from '@/context/sanctuary-context'
+import { useRainSeconds, useSanctuary } from '@/context/sanctuary-context'
 import type { BioRhythmState } from '@/lib/db'
 import { formatClock, glass, shortDate } from '@/lib/format'
 
@@ -116,6 +116,11 @@ function playGentleResonanceChime() {
   }
 }
 
+function SomaticRainLabel() {
+  const rainSeconds = useRainSeconds()
+  return <>Rain ({formatClock(rainSeconds)})</>
+}
+
 export function SomaticPulseScan() {
   const {
     orb,
@@ -124,7 +129,6 @@ export function SomaticPulseScan() {
     bioRhythm,
     sensoryMode,
     rainPlaying,
-    rainSeconds,
     toggleRain,
     updateBioRhythm,
     plantCheckIn,
@@ -164,7 +168,7 @@ export function SomaticPulseScan() {
       } else {
         setScanProgress(Math.min(99, Math.round((elapsed / 10) * 100)))
       }
-    }, 120)
+    }, 250)
     return () => window.clearInterval(id)
   }, [scanning, activeNodeIds, plantCheckIn])
 
@@ -854,7 +858,7 @@ export function SomaticPulseScan() {
                 )}
                 <span>
                   <strong className="block font-normal text-white">
-                    {rainPlaying ? `Rain (${formatClock(rainSeconds)})` : '3:00 Acoustic Rain'}
+                    {rainPlaying ? <SomaticRainLabel /> : '3:00 Acoustic Rain'}
                   </strong>
                   <span className="text-[10px] text-white/45">Warm rain + ambient pad</span>
                 </span>

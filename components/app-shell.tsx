@@ -28,7 +28,7 @@ import { AnimeSkyWorld } from '@/components/animation-system'
 import { LuminaLoader } from '@/components/lumina-loader'
 import { LuminaLogoIntro, PortalAwakeningOverlay } from '@/components/sanctuary-cinematics'
 import { BreathPacerModal, SupportModal } from '@/components/support-modals'
-import { useSanctuary, type SensoryMode } from '@/context/sanctuary-context'
+import { useRainSeconds, useSanctuary, type SensoryMode } from '@/context/sanctuary-context'
 import { resolveEntryRoute } from '@/lib/routing'
 
 export interface NavItem {
@@ -84,6 +84,11 @@ function formatClock(totalSeconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function AppShellRainLabel() {
+  const rainSeconds = useRainSeconds()
+  return <>Pause rain · {formatClock(rainSeconds)}</>
+}
+
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`)
 }
@@ -109,7 +114,6 @@ export function AppShell({
     gardenBlooms,
     sensoryMode,
     rainPlaying,
-    rainSeconds,
     toggleRain,
     updateProfileSettings,
     crisisAlert,
@@ -371,7 +375,7 @@ export function AppShell({
                 }`}
               >
                 {rainPlaying ? <Pause size={12} /> : <Play size={12} />}
-                {rainPlaying ? `Pause rain · ${formatClock(rainSeconds)}` : '3:00 Rain'}
+                {rainPlaying ? <AppShellRainLabel /> : '3:00 Rain'}
               </button>
             </div>
           ) : (
@@ -491,7 +495,7 @@ export function AppShell({
               <li key={item.href} className="flex-1">
                 <Link
                   href={item.href}
-                  prefetch={false}
+                  prefetch={active ? false : undefined}
                   aria-current={active ? 'page' : undefined}
                   className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] transition-colors ${
                     active ? 'font-medium text-[#f4d9e2]' : 'text-white/45 hover:text-white/70'
@@ -554,7 +558,7 @@ export function AppShell({
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      prefetch={false}
+                      prefetch={active ? false : undefined}
                       onClick={() => setMoreOpen(false)}
                       className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${
                         active

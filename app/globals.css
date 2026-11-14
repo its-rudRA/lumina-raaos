@@ -194,7 +194,7 @@ html, body {
   overscroll-behavior-y: none;
 }
 
-button, a, input, select, textarea, [role="button"] {
+button, a, input, select, textarea, label, summary, [role="button"] {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -213,4 +213,99 @@ button, a, input, select, textarea, [role="button"] {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* --------------------------------------------------------------------------
+   Mobile & Android WebView GPU / Touch Performance Layer
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  /* Cap backdrop-filter blurs on overlays/bars to <= 5px */
+  [class*="backdrop-blur-md"],
+  [class*="backdrop-blur-lg"],
+  [class*="backdrop-blur-xl"],
+  [class*="backdrop-blur-2xl"],
+  [class*="backdrop-blur-3xl"] {
+    --tw-backdrop-blur: blur(5px) !important;
+    backdrop-filter: blur(5px) !important;
+    -webkit-backdrop-filter: blur(5px) !important;
+  }
+
+  /* Eliminate stacked multi-layer GPU backdrop blurs on dashboard cards & skip off-screen paint */
+  .lumina-glass-card,
+  .glass-panel {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: rgba(20, 15, 36, 0.91) !important;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+    will-change: auto !important;
+  }
+
+  .support-button,
+  .icon-button,
+  .low-back,
+  .secondary-button {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(16, 13, 30, 0.9) !important;
+  }
+
+  .modal-backdrop {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    background: rgba(4, 6, 11, 0.88);
+  }
+
+  .auth-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(20, 15, 36, 0.92);
+  }
+
+  /* Replace fixed filter: blur(75px) auroras with GPU-light soft radial gradients */
+  .aurora {
+    filter: none !important;
+    transform: scale(1.35);
+  }
+  .aurora-one {
+    background: radial-gradient(circle, rgba(120, 59, 88, 0.78) 0%, transparent 70%);
+    opacity: 0.42;
+  }
+  .aurora-two {
+    background: radial-gradient(circle, rgba(35, 94, 97, 0.78) 0%, transparent 70%);
+    opacity: 0.42;
+  }
+  .aurora-three {
+    background: radial-gradient(circle, rgba(92, 78, 120, 0.75) 0%, transparent 70%);
+    opacity: 0.36;
+  }
+
+  /* Avoid full-screen software repaints during scrolling in Dawn theme */
+  html[data-theme="dawn"] body {
+    background-attachment: scroll;
+  }
+
+  /* Replace animated blur route keyframes with fast compositor-only transitions */
+  .lumina-room-transition {
+    animation: luminaRoomMobileEnter 180ms cubic-bezier(0.16, 1, 0.3, 1) both !important;
+  }
+  .lumina-room-transition > div > *,
+  .lumina-stagger-item,
+  .lumina-hero-title {
+    animation: none !important;
+  }
+  .lotus {
+    filter: none;
+  }
+}
+
+@keyframes luminaRoomMobileEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { EMOTION_OPTIONS, type CheckInRecord } from '@/lib/db'
+import { getFrameIntervalMs, getMaxDpr, isMobileRuntime } from '@/lib/perf'
 
 export type GardenCameraPreset = 'overview' | 'moongate' | 'pond' | 'canopy'
 export type GardenAtmospherePreset = 'twilight' | 'rose' | 'celestial' | 'dawn'
@@ -485,18 +486,12 @@ export function SanctuaryScene({
     const targetCamPos = new THREE.Vector3(0, 0.35, 4.6)
 
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: !isMobileRuntime(),
       alpha: true,
       powerPreference: 'high-performance',
     })
-    const isMobileViewport =
-      typeof window !== 'undefined' &&
-      (window.innerWidth < 768 || /Android/i.test(navigator.userAgent))
-    renderer.setPixelRatio(
-      isMobileViewport
-        ? Math.min(window.devicePixelRatio || 1, 1.5)
-        : Math.min(window.devicePixelRatio || 1, 2)
-    )
+    // PERF: DPR capped at 1.25 on mobile so WebGL never starves the CPU/GPU.
+    renderer.setPixelRatio(getMaxDpr(2))
     renderer.setSize(width, height)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
@@ -1508,9 +1503,10 @@ export function SanctuaryScene({
     renderer.domElement.addEventListener('pointermove', onDomPointerMove)
     renderer.domElement.addEventListener('click', onDomClick)
 
-    // 10. 60fps Animation Loop with Tab-Visibility Pause & Reduced-Motion / Low-Stimulus Support
+    // 10. 60fps Animation Loop with Tab-Visibility + Off-screen Pause & Reduced-Motion Support
     let frameId = 0
     let isTabHidden = typeof document !== 'undefined' ? document.hidden : false
+    let isInViewport = true
     let simTime = 0
     const clock = new THREE.Clock()
     const tempColor = new THREE.Color()
@@ -1531,7 +1527,7 @@ export function SanctuaryScene({
     let lastSceneFrameTime = performance.now()
 
     const animate = (now: number) => {
-      if (isTabHidden) {
+      if (isTabHidden || !isInViewport) {
         frameId = 0
         return
       }
@@ -1543,12 +1539,13 @@ export function SanctuaryScene({
       const effectiveSensory = state.sensoryMode || domSensory || 'full'
 
       // Adaptive FPS frame pacing: 60 FPS (16.5ms) in full, 36 FPS (27.5ms) in gentle, 24 FPS (41ms) in low
-      const frameInterval =
+      const frameInterval = getFrameIntervalMs(
         effectiveSensory === 'low'
           ? 41
           : effectiveSensory === 'gentle'
             ? 27.5
             : 16.5
+      )
 
       const deltaSinceLast = now - lastSceneFrameTime
       if (deltaSinceLast < frameInterval) {
@@ -1966,15 +1963,14 @@ export function SanctuaryScene({
       renderer.render(scene, camera)
     }
 
-    const handleVisibilityChange = () => {
-      isTabHidden = document.hidden
-      if (isTabHidden) {
+    const syncScenePlayback = () => {
+      if (isTabHidden || !isInViewport) {
         if (frameId) {
           window.cancelAnimationFrame(frameId)
           frameId = 0
         }
       } else {
-        // Discard accumulated hidden tab delta and resume smoothly
+        // Discard accumulated pause delta and resume smoothly
         clock.getDelta()
         lastSceneFrameTime = performance.now()
         if (!frameId) {
@@ -1983,8 +1979,25 @@ export function SanctuaryScene({
       }
     }
 
+    const handleVisibilityChange = () => {
+      isTabHidden = document.hidden
+      syncScenePlayback()
+    }
+
+    const viewportObserver =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            ([entry]) => {
+              isInViewport = entry ? entry.isIntersecting : true
+              syncScenePlayback()
+            },
+            { threshold: 0.02 }
+          )
+        : null
+    viewportObserver?.observe(container)
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    if (!isTabHidden) {
+    if (!isTabHidden && isInViewport) {
       frameId = window.requestAnimationFrame(animate)
     }
 
@@ -2004,6 +2017,7 @@ export function SanctuaryScene({
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      viewportObserver?.disconnect()
       motionQuery?.removeEventListener?.('change', onMotionPrefChange)
       resizeObserver.disconnect()
       window.removeEventListener('resize', handleResize)

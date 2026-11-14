@@ -15,6 +15,7 @@ import { AppShell } from '@/components/app-shell'
 import { useSanctuary } from '@/context/sanctuary-context'
 import { EMOTION_OPTIONS, type CheckInRecord, type EmotionOption } from '@/lib/db'
 import { glass, SOMATIC_TAGS, shortDate, timeAgo } from '@/lib/format'
+import { getFrameIntervalMs, getMaxDpr } from '@/lib/perf'
 
 interface CompoundAlchemyResult {
   title: string
@@ -237,7 +238,7 @@ export default function EmojiSanctuaryPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = getMaxDpr(2)
     const w = canvas.parentElement?.clientWidth || 900
     const h = canvas.parentElement?.clientHeight || 400
     canvas.width = w * dpr
@@ -260,7 +261,14 @@ export default function EmojiSanctuaryPage() {
     })
 
     let animId = 0
-    const animate = () => {
+    const frameInterval = getFrameIntervalMs(16.5)
+    let lastDraw = 0
+    const animate = (now: number) => {
+      if (document.hidden || now - lastDraw < frameInterval) {
+        animId = window.requestAnimationFrame(animate)
+        return
+      }
+      lastDraw = now
       ctx.clearRect(0, 0, w, h)
       let alive = false
       for (const p of particles) {
